@@ -1,0 +1,2 @@
+# SYNTHIA_REDUX_02
+SYNTHIA w/ Sequencer - in DEV
