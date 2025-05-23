@@ -1,7 +1,8 @@
 #include "Sequencer.h" // Ensures Sequencer class definition is known
 #include <cstdint>     // For uint16_t
 #include <cstring>     // For strlen
-#include "display.h"
+#include <font_LiberationMono.h>
+//#include "display.h"
 // #include <Arduino.h>   // Include if you use Serial.print within Sequencer methods for debugging
 
 Sequencer::Sequencer() : tft(nullptr), currentVoices(nullptr), is_playing(false), current_step(0), previous_step_drawn(-1), bpm(120.0f) {

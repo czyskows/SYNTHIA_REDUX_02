@@ -16,18 +16,14 @@
 #define COL_C 115
 #define COL_D 170
 
-extern ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+extern ILI9341_t3 tft;
+extern XPT2046_Touchscreen ts;
 
-void setSliderVals();
-void drawKnob();
-
-// MOSI=11, MISO=12, SCK=13
-extern XPT2046_Touchscreen ts(CS_PIN);
 #define TIRQ_PIN  2
 
-float masterVol, rms, avg;
-boolean wastouched = true;
-boolean but1, but2, but3, but4 = false;
+extern float masterVol, rms, avg;
+extern boolean wastouched;
+extern boolean but1, but2, but3, but4;
 extern int buttonState;
 extern int prevButtonState;
 extern int func;
@@ -43,23 +39,9 @@ void octaveScreen();
 void levelsScreen();
 void drawSmallKnob(int x_pos, int y_pos);
 void drawKnob(int x_pos, int y_pos);
+void SIN();
 
 
-void pulseScreen(){
-  tft.setFont(LiberationMono_12);
-  tft.setCursor(10, 10);
-  tft.print("OSC1 PULSE WIDTH");
-}
 
-///////Variables for Sine wave below////////////////////
-float Xi= 10, Yi= 10, Xf= 319-Xi, Yf= 239-Yi, Ym= 239/2;
 
-void SIN(){
-  for ( long  i = 0 ; i<=359 ; i++)
-    {  
-       tft.drawPixel((Xi+i), (Ym-(90*sin(3*i*PI/180))), ILI9341_BLUE);
-       delay(10);
-    }
-
-}
 

@@ -284,6 +284,14 @@ void sequencerScreen() {
     wasPressedLastFrame_sequencer = isCurrentlyPressed_sequencer;
 }
 
+// Actual Definitions of global variables declared as extern in display.h
+ILI9341_t3 tft = ILI9341_t3(TFT_CS, TFT_DC);
+XPT2046_Touchscreen ts(CS_PIN);
+
+int func = 0; // Initialize if needed
+int buttonState = 0;
+int prevButtonState = 0;
+
 //we're going to create references to our controls in an array
 AudioEffectEnvelope *envs[13] = {
   &env1, &env2, &env3, &env4, &env5,
@@ -1914,7 +1922,7 @@ switch (currentAppScreen) {
   } 
   */
   prevButtonState = buttonState;
-  wastouched = istouched;
+  //wastouched = istouched;
 
   // Serial.print(peak1.read());
   // Serial.print("\t");

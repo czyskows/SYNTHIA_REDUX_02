@@ -327,3 +327,17 @@ void reverbScreen(){
   tft.drawRect(55, 50, 40, 130, SYNTHIA_BLUISH);
 }
 
+
+
+///////Variables for Sine wave below////////////////////
+float Xi= 10, Yi= 10, Xf= 319-Xi, Yf= 239-Yi, Ym= 239/2;
+
+void SIN(){
+  for ( long  i = 0 ; i<=359 ; i++)
+    {  
+       tft.drawPixel((Xi+i), (Ym-(90*sin(3*i*PI/180))), ILI9341_BLUE);
+       delay(10);
+    }
+
+}
+
