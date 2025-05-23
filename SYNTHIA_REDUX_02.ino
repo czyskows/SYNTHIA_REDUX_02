@@ -181,13 +181,14 @@ AudioConnection          patchCord93(mixerDryWet2, peak4);
 AudioControlSGTL5000     sgtl5000_1;     //xy=1337.5,705
 // GUItool: end automatically generated code
 
-#include "frequencies.h"
+//#include "frequencies.h"
 #include "display.h"
 #include <AT42QT2120.h>
 #include <Bounce.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <CapacitiveSensor.h>
+#include "sequencer.h"
 
 #define change1 28
 #define change2 29
@@ -227,11 +228,61 @@ Bounce Bkey =   Bounce(bKey, 15);
 #define STATUS_KEY1     0   //TCA INPUT CHANNEL FOR SCREEN CONTROL
 #define STATUS_KEY2     4
 #define muxSignalPin    22  //CAPSENSE INPUT PIN
-#define capSenseSendPin 4   
+#define capSenseSendPin 4   //CAPSENSE INPUT PIN
 #define sampleRate      10
 #define n_inputs        12
 #define deltaVal        9000   
 #define thresh          24000    //KEY THREShOLD SETTING//
+
+#define TS_MINY   300
+#define TS_MAXY   5200
+#define TS_MINX   300
+#define TS_MAXX   5200
+
+Sequencer sequencer;
+
+SequencerVoice C3_B3_voices[Sequencer::NUM_NOTES];
+
+enum AppScreen {
+  SCREEN_ENVELOPE, //default
+  SCREEN_DELAY,
+  SCREEN_FILTER,
+  SCREEN_LEVELS,
+  SCREEN_WAVEFORM,
+  SCREEN_OCTAVE,
+  SCREEN_REVERB,
+  SCREEN_SEQUENCER,
+};
+AppScreen currentAppScreen = SCREEN_ENVELOPE; // Set your initial screen
+AppScreen previousAppScreen = SCREEN_ENVELOPE; // To detect changes
+
+bool readTouch(ILI9341_t3* tft_ptr, int* x, int* y) {
+  if (ts.touched()) {
+    TS_Point p = ts.getPoint();
+    *x = map(p.y, TS_MINY, TS_MAXY, 0, tft_ptr->width()); // Example for one rotation
+    *y = map(p.x, TS_MAXX, TS_MINX, 0, tft_ptr->height());// Example for one rotation
+    return true;
+  }
+  return false;
+}
+
+void sequencerScreen() {
+    if (currentAppScreen == SCREEN_SEQUENCER && previousAppScreen != SCREEN_SEQUENCER) {
+        sequencer.drawFullGUI();
+    }
+    sequencer.update();
+
+    int touchX, touchY;
+    // This static variable helps handle touch release correctly for the sequencer
+    static bool wasPressedLastFrame_sequencer = false;
+    bool isCurrentlyPressed_sequencer = readTouch(&tft, &touchX, &touchY); // Replace with your actual touch reading
+
+    // Pass touch state to sequencer if currently pressed OR if it was just released
+    if (isCurrentlyPressed_sequencer || wasPressedLastFrame_sequencer) {
+        sequencer.handleTouch(touchX, touchY, isCurrentlyPressed_sequencer);
+    }
+    wasPressedLastFrame_sequencer = isCurrentlyPressed_sequencer;
+}
 
 //we're going to create references to our controls in an array
 AudioEffectEnvelope *envs[13] = {
@@ -542,6 +593,20 @@ void setup() {
   waveformB1.begin(amp1, B2, current_waveform1);
   waveformB2.begin(amp1, B2, current_waveform2);
   waveformB3.begin(amp1, B3, current_waveform3);
+  C3_B3_voices[0]  = {&waveformC3,  &env1,  "C3"};
+  C3_B3_voices[1]  = {&waveformCS3, &env2, "C#3"}; // C-sharp
+  C3_B3_voices[2]  = {&waveformD3,  &env3,  "D3"};
+  C3_B3_voices[3]  = {&waveformDS3, &env4, "D#3"}; // D-sharp
+  C3_B3_voices[4]  = {&waveformE3,  &env5,  "E3"};
+  C3_B3_voices[5]  = {&waveformF3,  &env6,  "F3"};
+  C3_B3_voices[6]  = {&waveformFS3, &env7, "F#3"}; // F-sharp
+  C3_B3_voices[7]  = {&waveformG3,  &env8,  "G3"};
+  C3_B3_voices[8]  = {&waveformGS3, &env9, "G#3"}; // G-sharp
+  C3_B3_voices[9]  = {&waveformA3,  &env10,  "A3"};
+  C3_B3_voices[10] = {&waveformAS3, &env11, "A#3"}; // A-sharp
+  C3_B3_voices[11] = {&waveformB3,  &env12,  "B3"};
+
+  sequencer.init(&tft, C3_B3_voices, 120);
 
 ///////////ENABLE QTOUCH/////////////
   for(int i = 0; i< 5; i++){
@@ -783,31 +848,73 @@ void loop() {
 
   /////////////////////////////////SET BUTTON STATES FOR CONTROL////////////////////////////////////
   func = status1.keys;
+  previousAppScreen = currentAppScreen; // Store before potentially changing
+
   switch(func){
     case 64:
       buttonState = 1;      
+      currentAppScreen = SCREEN_ENVELOPE;
       break;
     case 32:
       buttonState = 2;      
+      currentAppScreen = SCREEN_DELAY;
       break;
     case 16: 
       buttonState = 3;      
+      currentAppScreen = SCREEN_FILTER;
       break;
     case 8:
       buttonState = 4;      
+      currentAppScreen = SCREEN_LEVELS;
       break;
     case 96:
       buttonState = 5;     
-      waveformScreen();
+      currentAppScreen = SCREEN_WAVEFORM;
       break;
     case 24:
       buttonState = 6;
-      octaveScreen();
+      currentAppScreen = SCREEN_OCTAVE;
       break;
     case 48:
       buttonState = 7;      
+      currentAppScreen = SCREEN_REVERB;
+      break;
+    case 72:
+      buttonState = 8;
+      currentAppScreen = SCREEN_SEQUENCER;
       break;
   }
+
+  if (previousAppScreen != currentAppScreen) {
+    tft.fillScreen(ILI9341_BLACK); // Clear screen on any screen change
+}
+
+switch (currentAppScreen) {
+    case SCREEN_ENVELOPE:
+        envelopeScreen(); 
+        break;
+    case SCREEN_WAVEFORM:
+        waveformScreen(); 
+        break;
+    case SCREEN_OCTAVE:
+        octaveScreen();   
+        break;
+    case SCREEN_SEQUENCER:
+        sequencerScreen(); 
+        break;
+    case SCREEN_REVERB:
+        reverbScreen(); 
+        break;
+    case SCREEN_FILTER:
+        filterScreen(); 
+        break;
+    case SCREEN_LEVELS:
+        levelsScreen(); 
+        break;
+    case SCREEN_DELAY:
+        delayScreen(); 
+        break;
+}
 
     //////////////DRAW KNOB VALUES ON SCREEN CHANGE//////////
   if(buttonState != prevButtonState){
@@ -1754,9 +1861,6 @@ void loop() {
     tft.fillRect(barStartX2, barY, barWidth, barHeightSegment, ILI9341_GREEN);
   }
 
-
-  
-  
   //////////////////////////////////DELAY PARAMETERS///////////////////////// THIS NEEDS WORK
   delay1.delay(0, 0);
   delay1.delay(1, deltime);

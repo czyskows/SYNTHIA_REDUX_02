@@ -249,7 +249,7 @@
 #define TFT_YELLOWGREEN 0x9E66
 
 #define SYNTHIA_BLUISH    0x538f
-#define SYTNHIA_LIGHTBLUE 0xae5c
+#define SYNTHIA_LIGHTBLUE 0xae5c
 #define SYNTHIA_TURQ      0x261c
 
 
