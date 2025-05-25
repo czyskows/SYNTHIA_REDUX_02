@@ -10,6 +10,7 @@
 #define TFT_CS 15
 
 #define CS_PIN 35
+#define TIRQ_PIN  2
 
 #define COL_A 5
 #define COL_B 60
@@ -19,7 +20,7 @@
 extern ILI9341_t3 tft;
 extern XPT2046_Touchscreen ts;
 
-#define TIRQ_PIN  2
+
 
 extern float masterVol, rms, avg;
 extern boolean wastouched;

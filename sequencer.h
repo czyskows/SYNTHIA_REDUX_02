@@ -19,7 +19,7 @@ struct SequencerVoice {
 
 class Sequencer {
 public:
-    static const int NUM_STEPS = 16;
+    static const int NUM_STEPS = 8;
     static const int NUM_NOTES = 12; // For one octave (C3 to B3) // MODIFIED
 
     // --- GUI Dimensions & Colors (Customize these) ---
@@ -29,9 +29,9 @@ public:
     
     // Sequencer Grid
     int gridStartX = 10;
-    int gridStartY = 30;
-    int cellWidth = 18;  // Width of each step cell
-    int cellHeight = 13; // Height of each note cell (Adjusted slightly for 12 notes to fit)
+    int gridStartY = 10;
+    int cellWidth = 21;  // Width of each step cell
+    int cellHeight = 12; // Height of each note cell
     int gridWidth = NUM_STEPS * cellWidth;
     int gridHeight = NUM_NOTES * cellHeight;
 
@@ -43,7 +43,7 @@ public:
     int faderAreaHeight = faderMaxHeight + 5; // Include some padding
 
     // Control Buttons (Example positions)
-    int playButtonX = 10;
+    int playButtonX = 180;
     int playButtonY = faderAreaStartY + faderAreaHeight + 10;
     int playButtonWidth = 60;
     int playButtonHeight = 25;
@@ -52,27 +52,6 @@ public:
     int stopButtonY = playButtonY;
     int stopButtonWidth = 60;
     int stopButtonHeight = 25;
-
-    int tempoUpButtonX = stopButtonX + stopButtonWidth + 20;
-    int tempoUpButtonY = playButtonY;
-    int tempoUpButtonWidth = 30;
-    int tempoUpButtonHeight = 25;
-
-    int tempoDownButtonX = tempoUpButtonX + tempoUpButtonWidth + 5;
-    int tempoDownButtonY = playButtonY;
-    int tempoDownButtonWidth = 30;
-    int tempoDownButtonHeight = 25;
-    
-    int octaveUpButtonX = tempoDownButtonX + tempoDownButtonWidth + 10;
-    int octaveUpButtonY = playButtonY;
-    int octaveUpButtonWidth = 30;
-    int octaveUpButtonHeight = 25;
-
-    int octaveDownButtonX = octaveUpButtonX + octaveUpButtonWidth + 5;
-    int octaveDownButtonY = playButtonY;
-    int octaveDownButtonWidth = 30;
-    int octaveDownButtonHeight = 25;
-
 
     // Colors
     uint16_t colorBackground = ILI9341_BLACK;

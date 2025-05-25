@@ -46,10 +46,6 @@ void Sequencer::init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, in
     faderAreaStartY = gridStartY + gridHeight + 10;
     playButtonY = faderAreaStartY + faderAreaHeight + 10;
     stopButtonY = playButtonY;
-    tempoUpButtonY = playButtonY;
-    tempoDownButtonY = playButtonY;
-    octaveUpButtonY = playButtonY;
-    octaveDownButtonY = playButtonY;
 
 }
 
@@ -287,22 +283,6 @@ void Sequencer::drawControls() {
     tft->setCursor(stopButtonX + 10, stopButtonY + 8);
     tft->print("STOP");
 
-    // Tempo Buttons & Display (Tempo display updated separately)
-    tft->fillRect(tempoUpButtonX, tempoUpButtonY, tempoUpButtonWidth, tempoUpButtonHeight, colorButton);
-    tft->setCursor(tempoUpButtonX + 10, tempoUpButtonY + 8);
-    tft->print("+");
-    tft->fillRect(tempoDownButtonX, tempoDownButtonY, tempoDownButtonWidth, tempoDownButtonHeight, colorButton);
-    tft->setCursor(tempoDownButtonX + 10, tempoDownButtonY + 8);
-    tft->print("-");
-    
-    // Octave Buttons
-    tft->fillRect(octaveUpButtonX, octaveUpButtonY, octaveUpButtonWidth, octaveUpButtonHeight, colorButton);
-    tft->setCursor(octaveUpButtonX + 4, octaveUpButtonY + 8);
-    tft->print("O+");
-    tft->fillRect(octaveDownButtonX, octaveDownButtonY, octaveDownButtonWidth, octaveDownButtonHeight, colorButton);
-    tft->setCursor(octaveDownButtonX + 4, octaveDownButtonY + 8);
-    tft->print("O-");
-
     updateTempoDisplay(); // Initial tempo display
 }
 
@@ -388,47 +368,22 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
     // Process button presses only once on initial touch to avoid multiple triggers if touch is held.
     static bool playPressedLast = false;
     static bool stopPressedLast = false;
-    static bool tempoUpPressedLast = false;
-    static bool tempoDownPressedLast = false;
-    static bool octaveUpPressedLast = false;
-    static bool octaveDownPressedLast = false;
 
     bool currentPlayPressed = false;
     bool currentStopPressed = false;
-    bool currentTempoUpPressed = false;
-    bool currentTempoDownPressed = false;
-    bool currentOctaveUpPressed = false;
-    bool currentOctaveDownPressed = false;
 
     if (isPressed) {
         if (touchX >= playButtonX && touchX < playButtonX + playButtonWidth &&
             touchY >= playButtonY && touchY < playButtonY + playButtonHeight) currentPlayPressed = true;
         else if (touchX >= stopButtonX && touchX < stopButtonX + stopButtonWidth &&
                  touchY >= stopButtonY && touchY < stopButtonY + stopButtonHeight) currentStopPressed = true;
-        else if (touchX >= tempoUpButtonX && touchX < tempoUpButtonX + tempoUpButtonWidth &&
-                 touchY >= tempoUpButtonY && touchY < tempoUpButtonY + tempoUpButtonHeight) currentTempoUpPressed = true;
-        else if (touchX >= tempoDownButtonX && touchX < tempoDownButtonX + tempoDownButtonWidth &&
-                 touchY >= tempoDownButtonY && touchY < tempoDownButtonY + tempoDownButtonHeight) currentTempoDownPressed = true;
-        else if (touchX >= octaveUpButtonX && touchX < octaveUpButtonX + octaveUpButtonWidth &&
-                 touchY >= octaveUpButtonY && touchY < octaveUpButtonY + octaveUpButtonHeight) currentOctaveUpPressed = true;
-        else if (touchX >= octaveDownButtonX && touchX < octaveDownButtonX + octaveDownButtonWidth &&
-                 touchY >= octaveDownButtonY && touchY < octaveDownButtonY + octaveDownButtonHeight) currentOctaveDownPressed = true;
     }
 
     if (currentPlayPressed && !playPressedLast) play();
     if (currentStopPressed && !stopPressedLast) stop();
-    if (currentTempoUpPressed && !tempoUpPressedLast) { setTempo(getTempo() + 1); /* updateTempoDisplay(); // called by setTempo */ }
-    if (currentTempoDownPressed && !tempoDownPressedLast) { setTempo(getTempo() - 1); /* updateTempoDisplay(); // called by setTempo */ }
-    if (currentOctaveUpPressed && !octaveUpPressedLast) shiftOctave(1);
-    if (currentOctaveDownPressed && !octaveDownPressedLast) shiftOctave(-1);
     
     playPressedLast = currentPlayPressed;
     stopPressedLast = currentStopPressed;
-    tempoUpPressedLast = currentTempoUpPressed;
-    tempoDownPressedLast = currentTempoDownPressed;
-    octaveUpPressedLast = currentOctaveUpPressed;
-    octaveDownPressedLast = currentOctaveDownPressed;
-
 
     // Redraw affected parts
     if (needsRedrawGrid) drawGrid(); 

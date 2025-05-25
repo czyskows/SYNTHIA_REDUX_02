@@ -189,6 +189,7 @@ AudioControlSGTL5000     sgtl5000_1;     //xy=1337.5,705
 #include <Wire.h>
 #include <CapacitiveSensor.h>
 #include "sequencer.h"
+#include <EEPROM.h>
 
 #define change1 28
 #define change2 29
@@ -239,8 +240,34 @@ Bounce Bkey =   Bounce(bKey, 15);
 #define TS_MINX   300
 #define TS_MAXX   5200
 
-Sequencer sequencer;
+// These will hold the active calibration data after loading or calculation
+int16_t touch_adc_x_min = 300;  // Default if no EEPROM data (adjust if your raw values differ a lot)
+int16_t touch_adc_x_max = 3700; // Default
+int16_t touch_adc_y_min = 300;  // Default
+int16_t touch_adc_y_max = 3700; // Default
 
+const int MIN_PRESSURE_THRESHOLD = 100;
+int16_t screenWidth = 320; // Will be updated in setup()
+int16_t screenHeight = 240; // Will be updated in setup()
+
+// For defining the 4 calibration target points on screen
+const int CAL_MARGIN = 10;
+int screen_points[4][2];
+TS_Point raw_adc_points[4]; // Stores raw ADC readings for calibration targets
+
+const int EEPROM_ADDRESS = 0; // Starting address in EEPROM
+const uint16_t CALIBRATION_MAGIC_NUMBER = 0xCAFE; // Identifies valid calibration data      ////////////////////////////////////MAGIC NUMBER//////////////////////////////////////////
+
+// EEPROM Configuration for Calibration Data
+struct TouchCalibrationData {
+    int16_t adc_x_min;
+    int16_t adc_x_max;
+    int16_t adc_y_min;
+    int16_t adc_y_max;
+    uint16_t magic_number; // To verify if EEPROM data is valid
+};
+
+Sequencer sequencer;
 SequencerVoice C3_B3_voices[Sequencer::NUM_NOTES];
 
 enum AppScreen {
@@ -260,10 +287,184 @@ bool readTouch(ILI9341_t3* tft_ptr, int* x, int* y) {
   if (ts.touched()) {
     TS_Point p = ts.getPoint();
     *x = map(p.y, TS_MINY, TS_MAXY, 0, tft_ptr->width()); // Example for one rotation
-    *y = map(p.x, TS_MAXX, TS_MINX, 0, tft_ptr->height());// Example for one rotation
+    *y = map(p.x, TS_MINX, TS_MAXX, 0, tft_ptr->height());// Example for one rotation
     return true;
   }
   return false;
+}
+
+// --- Function Declarations (to avoid ordering issues) ---
+void displayCalibrationTarget(int x, int y, uint16_t color);
+TS_Point getStableTouchPoint(const char* prompt);
+void runTouchCalibration();
+void saveCalibrationData();
+bool loadCalibrationData();
+
+
+// Helper to display a calibration target
+void displayCalibrationTarget(int x, int y, uint16_t color) {
+    tft.drawCircle(x, y, 8, color);
+    tft.drawCircle(x, y, 9, color);
+    tft.drawLine(x - 12, y, x + 12, y, color);
+    tft.drawLine(x, y - 12, x, y + 12, color);
+}
+
+// Helper to get a "stable" touch point
+TS_Point getStableTouchPoint(const char* prompt) {
+    TS_Point p;
+    tft.setCursor(10, screenHeight - 40);
+    tft.setTextColor(ILI9341_YELLOW); tft.setTextSize(1);
+    tft.print(prompt);
+
+    while (true) {
+        if (ts.touched()) {
+            p = ts.getPoint();
+            if (p.z > MIN_PRESSURE_THRESHOLD) {
+                break; 
+            }
+        }
+        delay(10); 
+    }
+    Serial.print("Touch down: X="); Serial.print(p.x); Serial.print(", Y="); Serial.print(p.y); Serial.print(", Z="); Serial.println(p.z);
+    
+    unsigned long touchStartTime = millis();
+    while (ts.touched()) {
+        if(millis() - touchStartTime > 2000) {
+            Serial.println("Touch release timeout.");
+            break;
+        }
+        delay(20);
+    }
+    tft.fillRect(10, screenHeight - 40, screenWidth - 20, 10, ILI9341_BLACK);
+    Serial.print("Touch released. Captured Raw ADC: X="); Serial.print(p.x); Serial.print(" Y="); Serial.print(p.y); Serial.print(" Z="); Serial.println(p.z);
+    return p;
+}
+
+void runTouchCalibration() {
+    tft.fillScreen(ILI9341_BLACK);
+    tft.setTextColor(ILI9341_WHITE);
+    tft.setTextSize(2);
+    tft.setCursor(screenWidth/2 - 100, 20);
+    tft.println("Touch Calibration");
+    tft.setTextSize(1);
+    delay(1000);
+
+    const char* prompts[4] = {
+        "Touch Top-Left Target",
+        "Touch Top-Right Target",
+        "Touch Bottom-Right Target",
+        "Touch Bottom-Left Target"
+    };
+
+    for (int i = 0; i < 4; i++) {
+        tft.fillScreen(ILI9341_BLACK); 
+        displayCalibrationTarget(screen_points[i][0], screen_points[i][1], ILI9341_RED);
+        raw_adc_points[i] = getStableTouchPoint(prompts[i]);
+        displayCalibrationTarget(screen_points[i][0], screen_points[i][1], ILI9341_BLACK);
+        delay(500); 
+    }
+
+    tft.fillScreen(ILI9341_BLACK);
+    tft.setCursor(screenWidth/2 - 80, screenHeight/2 - 10);
+    tft.setTextSize(2);
+    tft.println("Calculating...");
+    delay(1000);
+
+    Serial.println("--- Raw ADC Values Collected ---");
+    for (int i = 0; i < 4; i++) {
+        Serial.print("Screen Point ("); Serial.print(screen_points[i][0]); Serial.print(","); Serial.print(screen_points[i][1]); Serial.print("): ");
+        Serial.print("Raw ADC (X="); Serial.print(raw_adc_points[i].x);
+        Serial.print(", Y="); Serial.print(raw_adc_points[i].y);
+        Serial.print(", Z="); Serial.println(raw_adc_points[i].z);
+    }
+
+    int16_t x_vals_left_edge[2]  = {raw_adc_points[0].x, raw_adc_points[3].x}; 
+    int16_t x_vals_right_edge[2] = {raw_adc_points[1].x, raw_adc_points[2].x}; 
+    int16_t y_vals_top_edge[2]   = {raw_adc_points[0].y, raw_adc_points[1].y}; 
+    int16_t y_vals_bottom_edge[2]= {raw_adc_points[3].y, raw_adc_points[2].y}; 
+
+    // Update global calibration variables
+    touch_adc_x_min = (x_vals_left_edge[0] + x_vals_left_edge[1]) / 2;
+    touch_adc_x_max = (x_vals_right_edge[0] + x_vals_right_edge[1]) / 2;
+    touch_adc_y_min = (y_vals_top_edge[0] + y_vals_top_edge[1]) / 2;
+    touch_adc_y_max = (y_vals_bottom_edge[0] + y_vals_bottom_edge[1]) / 2;
+
+    if (touch_adc_x_min > touch_adc_x_max) { int16_t temp = touch_adc_x_min; touch_adc_x_min = touch_adc_x_max; touch_adc_x_max = temp; }
+    if (touch_adc_y_min > touch_adc_y_max) { int16_t temp = touch_adc_y_min; touch_adc_y_min = touch_adc_y_max; touch_adc_y_max = temp; }
+
+    saveCalibrationData(); // Now save these adjusted values
+
+    Serial.println("--- Calculated Calibration ADC Values (before saving) ---");
+    Serial.print("touch_adc_x_min: "); Serial.println(touch_adc_x_min);
+    Serial.print("touch_adc_x_max: "); Serial.println(touch_adc_x_max);
+    Serial.print("touch_adc_y_min: "); Serial.println(touch_adc_y_min);
+    Serial.print("touch_adc_y_max: "); Serial.println(touch_adc_y_max);
+
+    tft.fillScreen(ILI9341_BLACK);
+    tft.setCursor(screenWidth/2 - 80, screenHeight/2 - 20);
+    tft.setTextSize(2);
+    tft.println("Calibration");
+    tft.setCursor(screenWidth/2 - 40, screenHeight/2 + 0);
+    tft.println("Complete!");
+    tft.setTextSize(1);
+    tft.setCursor(10, screenHeight - 15);
+    tft.println("Check Serial Monitor. Testing in loop()...");
+    delay(3000);
+    tft.fillScreen(ILI9341_BLACK); 
+}
+
+void saveCalibrationData() {
+    TouchCalibrationData dataToSave;
+    dataToSave.adc_x_min = touch_adc_x_min;
+    dataToSave.adc_x_max = touch_adc_x_max;
+    dataToSave.adc_y_min = touch_adc_y_min;
+    dataToSave.adc_y_max = touch_adc_y_max;
+    dataToSave.magic_number = CALIBRATION_MAGIC_NUMBER;
+
+    EEPROM.put(EEPROM_ADDRESS, dataToSave);
+    // For ESP32/ESP8266, EEPROM.commit(); would be needed. For Teensy, put is usually enough.
+    Serial.println("Calibration data saved to EEPROM.");
+}
+
+bool loadCalibrationData() {
+    TouchCalibrationData loadedData;
+    EEPROM.get(EEPROM_ADDRESS, loadedData);
+
+    if (loadedData.magic_number == CALIBRATION_MAGIC_NUMBER) {
+        touch_adc_x_min = loadedData.adc_x_min;
+        touch_adc_x_max = loadedData.adc_x_max-200;
+        touch_adc_y_min = loadedData.adc_y_min;
+        touch_adc_y_max = (loadedData.adc_y_max-300);
+        Serial.println("--- Valid calibration data loaded from EEPROM ---");
+        Serial.print("touch_adc_x_min: "); Serial.println(touch_adc_x_min);
+        Serial.print("touch_adc_x_max: "); Serial.println(touch_adc_x_max);
+        Serial.print("touch_adc_y_min: "); Serial.println(touch_adc_y_min);
+        Serial.print("touch_adc_y_max: "); Serial.println(touch_adc_y_max);
+        return true;
+    } else {
+        Serial.println("No valid calibration data in EEPROM. Using defaults / running calibration.");
+        return false;
+    }
+}
+
+bool getCalibratedScreenPoint(int* screen_x, int* screen_y) {
+    if (ts.touched()) {
+        TS_Point p = ts.getPoint();
+
+        if (p.z > MIN_PRESSURE_THRESHOLD) { // Check pressure
+          int raw_x = p.x;
+          int raw_y = p.y;
+
+          *screen_x = map(raw_x, touch_adc_x_min, touch_adc_x_max, screenWidth - CAL_MARGIN, CAL_MARGIN);
+          *screen_y = map(raw_y, touch_adc_y_min, touch_adc_y_max, CAL_MARGIN, screenHeight - CAL_MARGIN); 
+          *screen_y -= 55;
+          *screen_x = constrain(*screen_x, 0, screenWidth - 1);
+          *screen_y = constrain(*screen_y, 0, screenHeight - 1);
+
+          return true; // Valid touch detected and calibrated
+        }
+    }
+    return false; // No valid touch
 }
 
 void sequencerScreen() {
@@ -414,9 +615,6 @@ const int barTopY= 51;
 int sliderVal1, P_sliderVal1, sliderVal2, sliderVal3, sliderVal4, wheelVal, buttons;
 int sliChange1, sliChange2, sliChange3, sliChange4, sliChange5;
 
-/////////////Arrays for storing delta values from touchPads////////
-// int diff[n_inputs] = {};
-// int previousTouch[n_inputs] = {};
 int touch[n_inputs] = {};
 
 CapacitiveSensor capSense = CapacitiveSensor( capSenseSendPin, muxSignalPin );
@@ -483,7 +681,9 @@ float rmsAve(float rms, int num){
 void setup() {
   
   Serial.begin(115200);
-  //while (!Serial && (millis() <= 1000));
+  unsigned long setupStartTime = millis();
+  while (!Serial && (millis() - setupStartTime < 2000)) ;
+  Serial.println("SYNTHIA REDUX Starting...");
   Wire.begin();
   //////Slider Change Pins////////////
   pinMode(change1, INPUT);
@@ -508,9 +708,44 @@ void setup() {
   ///////////////SET UP SCREEN//////////////
   tft.begin();
   tft.setRotation(3);
+  screenWidth = tft.width();   // Update global screen dimensions
+  screenHeight = tft.height();
   tft.fillScreen(ILI9341_BLACK);
-  ts.begin();
-  ts.setRotation(3);
+  // Initialize Touchscreen
+  if (!ts.begin()) {
+      Serial.println("XPT2046 Touchscreen initialization failed!");
+      tft.setCursor(10,10); tft.setTextColor(ILI9341_RED); tft.setTextSize(2);
+      tft.println("TOUCH INIT FAIL");
+      while(1) delay(100); // Halt
+  }
+  Serial.println("Touchscreen initialized.");
+
+  // Define calibration screen points (AFTER screenWidth/Height are known)
+    screen_points[0][0] = CAL_MARGIN;                screen_points[0][1] = CAL_MARGIN;                 // Top-Left
+    screen_points[1][0] = screenWidth - CAL_MARGIN;  screen_points[1][1] = CAL_MARGIN;                 // Top-Right
+    screen_points[2][0] = screenWidth - CAL_MARGIN;  screen_points[2][1] = screenHeight - CAL_MARGIN;  // Bottom-Right
+    screen_points[3][0] = CAL_MARGIN;                screen_points[3][1] = screenHeight - CAL_MARGIN;  // Bottom-Left
+
+    // Load calibration data or run calibration if needed
+    if (!loadCalibrationData()) { // If loading fails or data is invalid
+        Serial.println("Running touch screen calibration routine...");
+        tft.fillScreen(ILI9341_BLACK);
+        tft.setCursor(10, screenHeight / 2 - 20);
+        tft.setTextColor(ILI9341_YELLOW); tft.setTextSize(2);
+        tft.println("Touch Calibration Needed");
+        delay(2000); // Show message
+        runTouchCalibration(); // This will also save the data
+    } else {
+        Serial.println("Touch calibration data loaded successfully.");
+        tft.fillScreen(ILI9341_GREEN); // Brief visual confirmation
+        tft.setCursor(10, screenHeight / 2 - 10);
+        tft.setTextColor(ILI9341_BLACK); tft.setTextSize(2);
+        tft.println("Calibration Loaded");
+        delay(1500);
+        tft.fillScreen(ILI9341_BLACK);
+    }
+
+  ts.setRotation(2 );
   tft.setCursor(20,100);
   tft.setFont(LiberationMono_48);
   tft.setTextColor(ILI9341_WHITE);
@@ -616,29 +851,43 @@ void setup() {
 
   sequencer.init(&tft, C3_B3_voices, 120);
 
-///////////ENABLE QTOUCH/////////////
-  for(int i = 0; i< 5; i++){
-    TCA9548A(i);
-    touch_sensor.begin();
+  ///////////ENABLE QTOUCH/////////////
+  Serial.println("Calibrating QTouch sensors...");
+  for(int i = 0; i < 5; i++){ 
+    TCA9548A(i); 
+    Serial.print("  Initializing QTouch on MUX channel "); Serial.println(i);
+    touch_sensor.begin(); 
     
-    touch_sensor.enableSlider();
-    Serial.println("reseting...");
-    touch_sensor.reset();
-    
-    Serial.println("triggerCalibration");
-    touch_sensor.triggerCalibration();
-    delay(CALIBRATION_DELAY);
-    while (touch_sensor.calibrating()){
-      Serial.println("calibrating...");
-      delay(CALIBRATION_DELAY); 
+    if (i == 4) { 
+        touch_sensor.enableWheel();
+        Serial.println("    QTouch enabled as WHEEL.");
+    } else { 
+        touch_sensor.enableSlider();
+        Serial.println("    QTouch enabled as SLIDER.");
     }
-    Serial.println("finished calibrating");
-    
-    delay(500);
+
+    Serial.print("    Resetting QTouch on MUX channel "); Serial.println(i);
+    touch_sensor.reset();
+    delay(RESET_DELAY / 5); 
+
+    Serial.print("    Triggering calibration for QTouch on MUX channel "); Serial.println(i);
+    touch_sensor.triggerCalibration();
+    calibration_timeout = 0; 
+    while (touch_sensor.calibrating() && calibration_timeout < 3000){ 
+      Serial.print(".");
+      delay(CALIBRATION_DELAY / 2);
+    }
+    if (touch_sensor.calibrating()) { 
+        Serial.println("\n    Calibration FAILED for QTouch on MUX channel "); Serial.println(i);
+    } else {
+        Serial.println("\n    Finished calibrating QTouch on MUX channel "); Serial.println(i);
+    }
+    delay(100); 
   }
-  // tft.fillScreen(ILI9341_BLACK);
+  Serial.println("QTouch calibration sequence complete.");
+
   SIN();
-  delay(1000);
+  delay(100);
 
   ////////////SET UP MUX///////////////////
   // set control pins to output mode
@@ -664,8 +913,6 @@ void setup() {
 
 ////////////////////////////////////////////////////////LOOP/////////////////////////////////////////////////////////////////////////////
 void loop() {
-
-  boolean istouched = ts.touched();
 
   //////////Slider Value Change///////////////////
   sliChange1 = digitalRead(change4);
@@ -711,10 +958,10 @@ void loop() {
   for ( byte channel = 0; channel < n_inputs; ++channel ) {
     touch[channel] = readMux(channel);
     //diff[channel] = touch[channel] - previousTouch[channel];
-    Serial.print(touch[channel]);
-    Serial.print("\t");
+    //Serial.print(touch[channel]);
+    //Serial.print("\t");
   }
-  Serial.println();
+  //Serial.println();
   
   ////////////////////////////////////PLAY THE NOTES//////////////////////////////////////////////////
   if(touch[8] >= thresh){ 
@@ -1900,40 +2147,6 @@ switch (currentAppScreen) {
   freeverb1.roomsize(room);
   freeverb1.damping(damp);
 
-  ////////////////////TOUCH SCREEN READINGS///////////
-  /*
-  if (istouched) {
-    TS_Point p = ts.getPoint();
-  if (!wastouched) {     
-  }
-  tft.fillRect(225, 195, 200, 60, ILI9341_BLACK);
-  tft.setTextColor(ILI9341_GREEN);
-  tft.setFont(Arial_12);
-  tft.setCursor(225, 195);
-  tft.print("X = ");
-  tft.print(p.x);
-  tft.setCursor(225, 215);
-  tft.print("Y = ");
-  tft.print(p.y);
-  Serial.print(", x = ");
-  Serial.print(p.x);
-  Serial.print(", y = ");
-  Serial.println(p.y);
-  } 
-  */
   prevButtonState = buttonState;
-  //wastouched = istouched;
-
-  // Serial.print(peak1.read());
-  // Serial.print("\t");
-  // Serial.print(peak2.read());
-  // Serial.print("\t");
-  // Serial.print(peak3.read());
-  // Serial.print("\t");
-  // Serial.println(peak4.read());
-  // Serial.print("\t");
-  // Serial.print(atck);
-  // Serial.print("\t");
-  // Serial.println(osc1Vol);
 
 }
