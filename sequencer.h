@@ -3,14 +3,9 @@
 #define SEQUENCER_H
 
 #include <ILI9341_t3.h> // For TFT display
-#include "Audio.h"      // For AudioEffectEnvelope and AudioSynthWaveform
+#include <Audio.h>
+#include "frequencies.h"
 
-// Forward declaration for the touch handling function if it's complex
-// or part of another library you use.
-// For simplicity, we'll assume basic touch reading here.
-
-// Structure to hold a waveform and its corresponding envelope
-// This will be provided by your main sketch, populated with your actual audio objects
 struct SequencerVoice {
     AudioSynthWaveform* waveform;
     AudioEffectEnvelope* envelope;
@@ -24,8 +19,8 @@ public:
 
     // --- GUI Dimensions & Colors (Customize these) ---
     // General Layout
-    int screenWidth = 320; // Adjust to your screen width
-    int screenHeight = 240; // Adjust to your screen height
+    int screenWidth; // Adjust to your screen width
+    int screenHeight; // Adjust to your screen height
     
     // Sequencer Grid
     int gridStartX = 10;
@@ -43,7 +38,7 @@ public:
     int faderAreaHeight = faderMaxHeight + 5; // Include some padding
 
     // Control Buttons (Example positions)
-    int playButtonX = 180;
+    int playButtonX = 174;
     int playButtonY = faderAreaStartY + faderAreaHeight + 10;
     int playButtonWidth = 60;
     int playButtonHeight = 25;
@@ -56,8 +51,8 @@ public:
     // Colors
     uint16_t colorBackground = ILI9341_BLACK;
     uint16_t colorGridLines = ILI9341_DARKGREY;
-    uint16_t colorCellOff = ILI9341_BLUE;
-    uint16_t colorCellOn = ILI9341_YELLOW;
+    uint16_t colorCellOff = ILI9341_BLACK;
+    uint16_t colorCellOn = TFT_SEAGREEN;
     uint16_t colorCurrentStepHighlight = ILI9341_GREEN;
     uint16_t colorVelocityBar = ILI9341_CYAN;
     uint16_t colorText = ILI9341_WHITE;

@@ -256,7 +256,7 @@ int screen_points[4][2];
 TS_Point raw_adc_points[4]; // Stores raw ADC readings for calibration targets
 
 const int EEPROM_ADDRESS = 0; // Starting address in EEPROM
-const uint16_t CALIBRATION_MAGIC_NUMBER = 0xCAFE; // Identifies valid calibration data      ////////////////////////////////////MAGIC NUMBER//////////////////////////////////////////
+const uint16_t CALIBRATION_MAGIC_NUMBER = 0xCAFF; // Identifies valid calibration data      ////////////////////////////////////MAGIC NUMBER//////////////////////////////////////////
 
 // EEPROM Configuration for Calibration Data
 struct TouchCalibrationData {
@@ -432,9 +432,9 @@ bool loadCalibrationData() {
 
     if (loadedData.magic_number == CALIBRATION_MAGIC_NUMBER) {
         touch_adc_x_min = loadedData.adc_x_min;
-        touch_adc_x_max = loadedData.adc_x_max-200;
+        touch_adc_x_max = loadedData.adc_x_max;
         touch_adc_y_min = loadedData.adc_y_min;
-        touch_adc_y_max = (loadedData.adc_y_max-300);
+        touch_adc_y_max = loadedData.adc_y_max;
         Serial.println("--- Valid calibration data loaded from EEPROM ---");
         Serial.print("touch_adc_x_min: "); Serial.println(touch_adc_x_min);
         Serial.print("touch_adc_x_max: "); Serial.println(touch_adc_x_max);
@@ -450,21 +450,38 @@ bool loadCalibrationData() {
 bool getCalibratedScreenPoint(int* screen_x, int* screen_y) {
     if (ts.touched()) {
         TS_Point p = ts.getPoint();
+        if (p.z > MIN_PRESSURE_THRESHOLD) {
+            int raw_x = p.x;
+            int raw_y = p.y;
 
-        if (p.z > MIN_PRESSURE_THRESHOLD) { // Check pressure
-          int raw_x = p.x;
-          int raw_y = p.y;
+            // --- DEBUG PRINTS ---
+            Serial.print("getCalibratedScreenPoint using: ");
+            Serial.print("raw_x: "); Serial.print(raw_x);
+            Serial.print(", adc_x_min: "); Serial.print(touch_adc_x_min); // Global
+            Serial.print(", adc_x_max: "); Serial.print(touch_adc_x_max); // Global
+            Serial.print(" -> to screen X: "); Serial.print(CAL_MARGIN); Serial.print("-"); Serial.println(screenWidth - CAL_MARGIN);
 
-          *screen_x = map(raw_x, touch_adc_x_min, touch_adc_x_max, screenWidth - CAL_MARGIN, CAL_MARGIN);
-          *screen_y = map(raw_y, touch_adc_y_min, touch_adc_y_max, CAL_MARGIN, screenHeight - CAL_MARGIN); 
-          *screen_y -= 55;
-          *screen_x = constrain(*screen_x, 0, screenWidth - 1);
-          *screen_y = constrain(*screen_y, 0, screenHeight - 1);
+            Serial.print("                            "); // Align for Y
+            Serial.print("raw_y: "); Serial.print(raw_y);
+            Serial.print(", adc_y_min: "); Serial.print(touch_adc_y_min); // Global
+            Serial.print(", adc_y_max: "); Serial.print(touch_adc_y_max); // Global
+            Serial.print(" -> to screen Y: "); Serial.print(CAL_MARGIN); Serial.print("-"); Serial.println(screenHeight - CAL_MARGIN);
+            // --- END DEBUG PRINTS ---
 
-          return true; // Valid touch detected and calibrated
+            *screen_x = map(raw_x, touch_adc_x_min, touch_adc_x_max, screenWidth - CAL_MARGIN, CAL_MARGIN);
+            *screen_y = map(raw_y, touch_adc_y_min, touch_adc_y_max, CAL_MARGIN, screenHeight - CAL_MARGIN); 
+            
+            // --- DEBUG PRINT MAPPED VALUES BEFORE CONSTRAIN ---
+            Serial.print("Mapped (pre-constrain) sx: "); Serial.print(*screen_x);
+            Serial.print(", sy: "); Serial.println(*screen_y);
+            // --- END DEBUG PRINTS ---
+            
+            *screen_x = constrain(*screen_x, 0, screenWidth - 1);
+            *screen_y = constrain(*screen_y, 0, screenHeight - 1);
+            return true;
         }
     }
-    return false; // No valid touch
+    return false;
 }
 
 void sequencerScreen() {
@@ -476,7 +493,7 @@ void sequencerScreen() {
     int touchX, touchY;
     // This static variable helps handle touch release correctly for the sequencer
     static bool wasPressedLastFrame_sequencer = false;
-    bool isCurrentlyPressed_sequencer = readTouch(&tft, &touchX, &touchY); // Replace with your actual touch reading
+    bool isCurrentlyPressed_sequencer = getCalibratedScreenPoint(&touchX, &touchY); // Replace with your actual touch reading
 
     // Pass touch state to sequencer if currently pressed OR if it was just released
     if (isCurrentlyPressed_sequencer || wasPressedLastFrame_sequencer) {
@@ -1104,72 +1121,74 @@ void loop() {
   /////////////////////////////////SET BUTTON STATES FOR CONTROL////////////////////////////////////
   func = status1.keys;
   previousAppScreen = currentAppScreen; // Store before potentially changing
-
-  switch(func){
-    case 64:
-      buttonState = 1;      
-      currentAppScreen = SCREEN_ENVELOPE;
-      break;
-    case 32:
-      buttonState = 2;      
-      currentAppScreen = SCREEN_DELAY;
-      break;
-    case 16: 
-      buttonState = 3;      
-      currentAppScreen = SCREEN_FILTER;
-      break;
-    case 8:
-      buttonState = 4;      
-      currentAppScreen = SCREEN_LEVELS;
-      break;
-    case 96:
-      buttonState = 5;     
-      currentAppScreen = SCREEN_WAVEFORM;
-      break;
-    case 24:
-      buttonState = 6;
-      currentAppScreen = SCREEN_OCTAVE;
-      break;
-    case 48:
-      buttonState = 7;      
-      currentAppScreen = SCREEN_REVERB;
-      break;
-    case 72:
-      buttonState = 8;
-      currentAppScreen = SCREEN_SEQUENCER;
-      break;
+  sequencer.update();
+  if(status2.keys == 8){
+    switch(func){
+      case 64:
+        buttonState = 1;      
+        currentAppScreen = SCREEN_ENVELOPE;
+        break;
+      case 32:
+        buttonState = 2;      
+        currentAppScreen = SCREEN_DELAY;
+        break;
+      case 16: 
+        buttonState = 3;      
+        currentAppScreen = SCREEN_FILTER;
+        break;
+      case 8:
+        buttonState = 4;      
+        currentAppScreen = SCREEN_LEVELS;
+        break;
+      case 96:
+        buttonState = 5;     
+        currentAppScreen = SCREEN_WAVEFORM;
+        break;
+      case 24:
+        buttonState = 6;
+        currentAppScreen = SCREEN_OCTAVE;
+        break;
+      case 48:
+        buttonState = 7;      
+        currentAppScreen = SCREEN_REVERB;
+        break;
+      case 72:
+        buttonState = 8;
+        currentAppScreen = SCREEN_SEQUENCER;
+        break;
+    }
   }
 
   if (previousAppScreen != currentAppScreen) {
-    tft.fillScreen(ILI9341_BLACK); // Clear screen on any screen change
-}
+    tft.fillScreen(ILI9341_BLACK); 
+  }
 
-switch (currentAppScreen) {
-    case SCREEN_ENVELOPE:
-        envelopeScreen(); 
-        break;
-    case SCREEN_WAVEFORM:
-        waveformScreen(); 
-        break;
-    case SCREEN_OCTAVE:
-        octaveScreen();   
-        break;
-    case SCREEN_SEQUENCER:
-        sequencerScreen(); 
-        break;
-    case SCREEN_REVERB:
-        reverbScreen(); 
-        break;
-    case SCREEN_FILTER:
-        filterScreen(); 
-        break;
-    case SCREEN_LEVELS:
-        levelsScreen(); 
-        break;
-    case SCREEN_DELAY:
-        delayScreen(); 
-        break;
-}
+  switch (currentAppScreen) {
+      case SCREEN_ENVELOPE:
+          envelopeScreen(); 
+          break;
+      case SCREEN_WAVEFORM:
+          waveformScreen(); 
+          break;
+      case SCREEN_OCTAVE:
+          octaveScreen();   
+          break;
+      case SCREEN_SEQUENCER:
+          sequencerScreen(); 
+          break;
+      case SCREEN_REVERB:
+          reverbScreen(); 
+          break;
+      case SCREEN_FILTER:
+          filterScreen(); 
+          break;
+      case SCREEN_LEVELS:
+          levelsScreen(); 
+          break;
+      case SCREEN_DELAY:
+          delayScreen(); 
+          break;
+  }
 
     //////////////DRAW KNOB VALUES ON SCREEN CHANGE//////////
   if(buttonState != prevButtonState){
@@ -1307,6 +1326,9 @@ switch (currentAppScreen) {
       drawKnob(6, roomD);
       tft.fillRect(56, 50, 38, 130, ILI9341_BLACK);
       drawKnob(56, dampD);
+      break;
+      case 8:
+      sequencerScreen();
       break;
     }
   }
@@ -1757,6 +1779,15 @@ switch (currentAppScreen) {
       }  
     }
 
+    if(buttonState == 8){
+      if(sliChange4 == 0){
+        tft.fillRect(30, 220, 30, 10, ILI9341_BLACK); 
+        sequencer.setTempo(map(sliderVal4, 0, 255, 50, 150));
+      }
+      if(status1.keys == 16){sequencer.play();}
+      if(status1.keys == 8) {sequencer.stop();}
+    }
+
     if(buttonState == 6){
     //////////////////PICK AND UPDATE WAVEFORM OCTAVE//////////////////////
     if(sliChange1 == 0 && P_sliderVal1 != sliderVal1){  
@@ -2087,12 +2118,11 @@ switch (currentAppScreen) {
     }
   }
   // Clear the area where the first VU meter is drawn
-  tft.fillRect(barStartX1, barTopY, barWidth, 220 - barTopY + 1, ILI9341_BLACK);
+  tft.fillRect(barStartX1, barTopY, barWidth, 180 - barTopY + 1, ILI9341_BLACK);
   // Draw the individual bars based on displayedLvlMtr1
   int numBarsToDraw1 = int(displayedLvlMtr1);
   for (int i = 0; i < numBarsToDraw1; i++) {
-    int barY = 180 - ((i + 1) * barHeightSegment) + 1; // Calculate Y from bottom up with optional spacing
-    //Serial.println(barY); // ADDED FOR DEBUGGING
+    int barY = 180 - ((i + 1) * barHeightSegment) + 1; 
     tft.fillRect(barStartX1, barY, barWidth, barHeightSegment, ILI9341_GREEN);
   }
 
@@ -2107,7 +2137,7 @@ switch (currentAppScreen) {
     }
   }
   // Clear the area where the first VU meter is drawn
-  tft.fillRect(barStartX2, barTopY, barWidth, 220 - barTopY + 1, ILI9341_BLACK);
+  tft.fillRect(barStartX2, barTopY, barWidth, 180 - barTopY + 1, ILI9341_BLACK);
   // Draw the individual bars based on displayedLvlMtr1
   int numBarsToDraw2 = int(displayedLvlMtr2);
   for (int i = 0; i < numBarsToDraw2; i++) {

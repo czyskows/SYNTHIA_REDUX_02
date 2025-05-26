@@ -20,8 +20,6 @@
 extern ILI9341_t3 tft;
 extern XPT2046_Touchscreen ts;
 
-
-
 extern float masterVol, rms, avg;
 extern boolean wastouched;
 extern boolean but1, but2, but3, but4;

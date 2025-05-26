@@ -193,7 +193,7 @@ void Sequencer::drawNoteNames() {
         int y = gridStartY + n * cellHeight + cellHeight / 2 - 4; // Center text in cell
         // Adjust x for note name width to prevent overlap with grid
         int x_offset = ( (currentVoices[n].noteName && strlen(currentVoices[n].noteName) > 1) ? 10 : 5); // Wider for "C#3" than "C3"
-        int x = gridStartX - x_offset - 2; // Ensure space
+        int x = gridStartX - x_offset - 6; // Ensure space
         if (x < 0) x = 0; // Prevent drawing off-screen
 
         // Clear previous text area more reliably
@@ -289,15 +289,15 @@ void Sequencer::drawControls() {
 void Sequencer::updateTempoDisplay() {
     if (!tft) return;
     // Position for tempo display (example)
-    int tempoDisplayX = stopButtonX + stopButtonWidth + 5; // Position next to stop button
-    int tempoDisplayY = playButtonY - 12; // Position above the control buttons
+    int tempoDisplayX = stopButtonX; 
+    int tempoDisplayY = playButtonY - 15; 
 
-    tft->setFont(LiberationMono_10); // MODIFIED: Revert to classic built-in font
-    tft->setTextSize(1);   // Use small text size
-    tft->fillRect(tempoDisplayX, tempoDisplayY, 60, 10, colorBackground); // Clear old tempo text area
+    tft->setFont(LiberationMono_10); 
+    tft->setTextSize(1);   
+    tft->fillRect(tempoDisplayX, tempoDisplayY, 70, 10, colorBackground); 
     tft->setTextColor(colorText);
     tft->setCursor(tempoDisplayX, tempoDisplayY);
-    tft->print("BPM:"); // Removed space for tighter fit
+    tft->print("BPM: "); 
     tft->print(getTempo());
 }
 
@@ -363,7 +363,7 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
             }
         }
     }
-
+/*
     // --- Control Button Interaction ---
     // Process button presses only once on initial touch to avoid multiple triggers if touch is held.
     static bool playPressedLast = false;
@@ -384,7 +384,7 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
     
     playPressedLast = currentPlayPressed;
     stopPressedLast = currentStopPressed;
-
+*/
     // Redraw affected parts
     if (needsRedrawGrid) drawGrid(); 
     if (needsRedrawVelocities) drawVelocities(); 
