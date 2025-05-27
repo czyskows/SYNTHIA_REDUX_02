@@ -377,20 +377,40 @@ void runTouchCalibration() {
         Serial.print(", Y="); Serial.print(raw_adc_points[i].y);
         Serial.print(", Z="); Serial.println(raw_adc_points[i].z);
     }
+    int16_t adc_val_for_screenX_left  = (raw_adc_points[0].y + raw_adc_points[3].y) / 2;
+    int16_t adc_val_for_screenX_right = (raw_adc_points[1].y + raw_adc_points[2].y) / 2;
 
-    int16_t x_vals_left_edge[2]  = {raw_adc_points[0].x, raw_adc_points[3].x}; 
-    int16_t x_vals_right_edge[2] = {raw_adc_points[1].x, raw_adc_points[2].x}; 
-    int16_t y_vals_top_edge[2]   = {raw_adc_points[0].y, raw_adc_points[1].y}; 
-    int16_t y_vals_bottom_edge[2]= {raw_adc_points[3].y, raw_adc_points[2].y}; 
+    int16_t adc_val_for_screenY_top    = (raw_adc_points[0].x + raw_adc_points[1].x) / 2;
+    int16_t adc_val_for_screenY_bottom = (raw_adc_points[3].x + raw_adc_points[2].x) / 2;
+
+    if (adc_val_for_screenX_left < adc_val_for_screenX_right) {
+      touch_adc_x_min = adc_val_for_screenX_left;
+      touch_adc_x_max = adc_val_for_screenX_right;
+    } else {
+      touch_adc_x_min = adc_val_for_screenX_right;
+      touch_adc_x_max = adc_val_for_screenX_left;
+    }
+
+    if (adc_val_for_screenY_top < adc_val_for_screenY_bottom) {
+      touch_adc_y_min = adc_val_for_screenY_top;
+      touch_adc_y_max = adc_val_for_screenY_bottom;
+    } else {
+      touch_adc_y_min = adc_val_for_screenY_bottom;
+      touch_adc_y_max = adc_val_for_screenY_top;
+    }
 
     // Update global calibration variables
-    touch_adc_x_min = (x_vals_left_edge[0] + x_vals_left_edge[1]) / 2;
-    touch_adc_x_max = (x_vals_right_edge[0] + x_vals_right_edge[1]) / 2;
-    touch_adc_y_min = (y_vals_top_edge[0] + y_vals_top_edge[1]) / 2;
-    touch_adc_y_max = (y_vals_bottom_edge[0] + y_vals_bottom_edge[1]) / 2;
+    touch_adc_x_min = (raw_adc_points[0].y + raw_adc_points[3].y) / 2; // Avg Y_ADC for Left Screen Edge (TL.y, BL.y)
+    touch_adc_x_max = (raw_adc_points[1].y + raw_adc_points[2].y) / 2; // Avg Y_ADC for Right Screen Edge (TR.y, BR.y)
+    if (touch_adc_x_min > touch_adc_x_max) std::swap(touch_adc_x_min, touch_adc_x_max); // Ensure min < max for this range
 
-    if (touch_adc_x_min > touch_adc_x_max) { int16_t temp = touch_adc_x_min; touch_adc_x_min = touch_adc_x_max; touch_adc_x_max = temp; }
-    if (touch_adc_y_min > touch_adc_y_max) { int16_t temp = touch_adc_y_min; touch_adc_y_min = touch_adc_y_max; touch_adc_y_max = temp; }
+    touch_adc_y_min = (raw_adc_points[0].x + raw_adc_points[1].x) / 2; // Avg X_ADC for Top Screen Edge (TL.x, TR.x)
+    touch_adc_y_max = (raw_adc_points[3].x + raw_adc_points[2].x) / 2; // Avg X_ADC for Bottom Screen Edge (BL.x, BR.x)
+    if (touch_adc_y_min > touch_adc_y_max) std::swap(touch_adc_y_min, touch_adc_y_max); // Ensure min < max
+
+
+    //if (touch_adc_x_min > touch_adc_x_max) { int16_t temp = touch_adc_x_min; touch_adc_x_min = touch_adc_x_max; touch_adc_x_max = temp; }
+    //if (touch_adc_y_min > touch_adc_y_max) { int16_t temp = touch_adc_y_min; touch_adc_y_min = touch_adc_y_max; touch_adc_y_max = temp; }
 
     saveCalibrationData(); // Now save these adjusted values
 
@@ -451,36 +471,27 @@ bool getCalibratedScreenPoint(int* screen_x, int* screen_y) {
     if (ts.touched()) {
         TS_Point p = ts.getPoint();
         if (p.z > MIN_PRESSURE_THRESHOLD) {
-            int raw_x = p.x;
-            int raw_y = p.y;
+            int raw_screen_x_adc = p.y; // Screen X is from p.y
+            int raw_screen_y_adc = p.x; // Screen Y is from p.x
 
-            // --- DEBUG PRINTS ---
-            Serial.print("getCalibratedScreenPoint using: ");
-            Serial.print("raw_x: "); Serial.print(raw_x);
-            Serial.print(", adc_x_min: "); Serial.print(touch_adc_x_min); // Global
-            Serial.print(", adc_x_max: "); Serial.print(touch_adc_x_max); // Global
-            Serial.print(" -> to screen X: "); Serial.print(CAL_MARGIN); Serial.print("-"); Serial.println(screenWidth - CAL_MARGIN);
+            *screen_x = map(raw_screen_x_adc, 
+                            touch_adc_x_min, // Raw Y_ADC for screen Left
+                            touch_adc_x_max, // Raw Y_ADC for screen Right
+                            CAL_MARGIN,                // Screen Left output
+                            screenWidth - CAL_MARGIN); // Screen Right output
 
-            Serial.print("                            "); // Align for Y
-            Serial.print("raw_y: "); Serial.print(raw_y);
-            Serial.print(", adc_y_min: "); Serial.print(touch_adc_y_min); // Global
-            Serial.print(", adc_y_max: "); Serial.print(touch_adc_y_max); // Global
-            Serial.print(" -> to screen Y: "); Serial.print(CAL_MARGIN); Serial.print("-"); Serial.println(screenHeight - CAL_MARGIN);
-            // --- END DEBUG PRINTS ---
-
-            *screen_x = map(raw_x, touch_adc_x_min, touch_adc_x_max, screenWidth - CAL_MARGIN, CAL_MARGIN);
-            *screen_y = map(raw_y, touch_adc_y_min, touch_adc_y_max, CAL_MARGIN, screenHeight - CAL_MARGIN); 
-            
-            // --- DEBUG PRINT MAPPED VALUES BEFORE CONSTRAIN ---
-            Serial.print("Mapped (pre-constrain) sx: "); Serial.print(*screen_x);
-            Serial.print(", sy: "); Serial.println(*screen_y);
-            // --- END DEBUG PRINTS ---
+            *screen_y = map(raw_screen_y_adc, 
+                            touch_adc_y_min, // Raw X_ADC for screen Top
+                            touch_adc_y_max, // Raw X_ADC for screen Bottom
+                            CAL_MARGIN,                 // Screen Top output
+                            screenHeight - CAL_MARGIN); // Screen Bottom output
             
             *screen_x = constrain(*screen_x, 0, screenWidth - 1);
             *screen_y = constrain(*screen_y, 0, screenHeight - 1);
             return true;
         }
     }
+    *screen_x = -1; *screen_y = -1; // Indicate no valid touch
     return false;
 }
 
@@ -488,7 +499,7 @@ void sequencerScreen() {
     if (currentAppScreen == SCREEN_SEQUENCER && previousAppScreen != SCREEN_SEQUENCER) {
         sequencer.drawFullGUI();
     }
-    sequencer.update();
+    //sequencer.update();
 
     int touchX, touchY;
     // This static variable helps handle touch release correctly for the sequencer
@@ -1121,7 +1132,9 @@ void loop() {
   /////////////////////////////////SET BUTTON STATES FOR CONTROL////////////////////////////////////
   func = status1.keys;
   previousAppScreen = currentAppScreen; // Store before potentially changing
-  sequencer.update();
+
+  sequencer.update(currentAppScreen == SCREEN_SEQUENCER);
+
   if(status2.keys == 8){
     switch(func){
       case 64:

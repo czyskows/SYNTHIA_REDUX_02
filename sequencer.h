@@ -1,11 +1,11 @@
-// Sequencer.h
 #ifndef SEQUENCER_H
 #define SEQUENCER_H
 
-#include <ILI9341_t3.h> // For TFT display
-#include <Audio.h>
-#include "frequencies.h"
+#include <ILI9341_t3.h> 
+#include <Audio.h>    
+#include "frequencies.h" 
 
+// Structure to hold a waveform and its corresponding envelope
 struct SequencerVoice {
     AudioSynthWaveform* waveform;
     AudioEffectEnvelope* envelope;
@@ -14,45 +14,41 @@ struct SequencerVoice {
 
 class Sequencer {
 public:
-    static const int NUM_STEPS = 8;
-    static const int NUM_NOTES = 12; // For one octave (C3 to B3) // MODIFIED
+    static const int NUM_STEPS = 8;  // USER MODIFIED
+    static const int NUM_NOTES = 12; // For one octave (C3 to B3)
 
     // --- GUI Dimensions & Colors (Customize these) ---
-    // General Layout
-    int screenWidth; // Adjust to your screen width
-    int screenHeight; // Adjust to your screen height
+    int screenWidth; 
+    int screenHeight; 
     
-    // Sequencer Grid
-    int gridStartX = 10;
-    int gridStartY = 10;
-    int cellWidth = 21;  // Width of each step cell
-    int cellHeight = 12; // Height of each note cell
+    int gridStartX = 10;        // USER MODIFIED
+    int gridStartY = 10;        // USER MODIFIED
+    int cellWidth = 21;         // USER MODIFIED
+    int cellHeight = 12;        // USER MODIFIED
     int gridWidth = NUM_STEPS * cellWidth;
     int gridHeight = NUM_NOTES * cellHeight;
 
-    // Velocity Faders
     int faderAreaStartX = gridStartX;
-    int faderAreaStartY = gridStartY + gridHeight + 10; // 10px spacing
-    int faderWidth = cellWidth; // Same width as step cells
-    int faderMaxHeight = 30;    // Max height of a velocity fader
-    int faderAreaHeight = faderMaxHeight + 5; // Include some padding
+    int faderAreaStartY; // Calculated in init
+    int faderWidth = cellWidth; 
+    int faderMaxHeight = 30;    
+    int faderAreaHeight = faderMaxHeight + 5; 
 
-    // Control Buttons (Example positions)
-    int playButtonX = 174;
-    int playButtonY = faderAreaStartY + faderAreaHeight + 10;
+    int playButtonX = 174;      // USER MODIFIED
+    int playButtonY; // Calculated in init
     int playButtonWidth = 60;
     int playButtonHeight = 25;
 
-    int stopButtonX = playButtonX + playButtonWidth + 10;
-    int stopButtonY = playButtonY;
+    int stopButtonX; // Calculated in init
+    int stopButtonY; // Calculated in init
     int stopButtonWidth = 60;
     int stopButtonHeight = 25;
 
     // Colors
     uint16_t colorBackground = ILI9341_BLACK;
     uint16_t colorGridLines = ILI9341_DARKGREY;
-    uint16_t colorCellOff = ILI9341_BLACK;
-    uint16_t colorCellOn = TFT_SEAGREEN;
+    uint16_t colorCellOff = ILI9341_BLACK;     // USER MODIFIED
+    uint16_t colorCellOn = TFT_SEAGREEN;       // USER MODIFIED (Ensure TFT_SEAGREEN is defined, e.g. from ILI9341_t3.h or as 0x3FE0)
     uint16_t colorCurrentStepHighlight = ILI9341_GREEN;
     uint16_t colorVelocityBar = ILI9341_CYAN;
     uint16_t colorText = ILI9341_WHITE;
@@ -62,71 +58,51 @@ public:
 
     Sequencer();
 
-    // Call this in your main setup()
-    // Pass your TFT object and the array of SequencerVoice structs for the current octave
     void init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, int initialTempo = 120);
-
-    // Call this in your main loop()
-    void update(); // Handles timing and note triggering
-
-    // Call this to draw/redraw the GUI
-    void drawGUI();
-    void drawFullGUI(); // Draws everything
+    void update(bool guiIsActive); // MODIFIED: Added guiIsActive parameter
+    void drawGUI(); 
+    void drawFullGUI(); 
     void drawGrid();
     void drawVelocities();
     void drawControls();
     void drawNoteNames();
     void highlightCurrentStep();
-    void updateTempoDisplay();
+    void updateTempoDisplay(); 
 
-
-    // Call this when touch is detected
-    // x, y are screen coordinates of the touch
-    // isPressed is true if touch is currently active
     void handleTouch(int touchX, int touchY, bool isPressed);
 
     void play();
     void stop();
     void setTempo(int newTempo);
     int getTempo() const;
+    bool isPlaying() const;
 
-    // For octave switching later
     void setCurrentOctaveVoices(SequencerVoice* voicesForOctave);
-    void shiftOctave(int direction); // +1 for up, -1 for down
+    void shiftOctave(int direction); 
 
 
 private:
-    ILI9341_t3* tft; // Pointer to the TFT object
-    SequencerVoice* currentVoices; // Pointers to Waveform/Envelope pairs for the current octave
+    ILI9341_t3* tft; 
+    SequencerVoice* currentVoices; 
 
-    bool note_active[NUM_STEPS][NUM_NOTES]; // Array dimension updated due to NUM_NOTES change
-    uint8_t note_velocity[NUM_STEPS]; // 0-127
+    bool note_active[NUM_STEPS][NUM_NOTES]; 
+    uint8_t note_velocity[NUM_STEPS]; 
 
     bool is_playing;
     int current_step;
-    int previous_step_drawn; // To clear previous highlight
+    int previous_step_drawn; 
     float bpm;
     unsigned long step_duration_ms;
     elapsedMillis time_since_last_step;
 
-    // Touch state
-    bool touch_was_pressed_on_grid[NUM_STEPS][NUM_NOTES]; // Array dimension updated
+    bool touch_was_pressed_on_grid[NUM_STEPS][NUM_NOTES]; 
     bool touch_was_pressed_on_fader[NUM_STEPS];
     int  last_touch_y_on_fader[NUM_STEPS];
     
-    // Placeholder for actual octave management
-    int currentOctaveIndex = 0; // e.g., 0 for C3-B3, 1 for C4-B4, etc.
-                                // You'll need a way to map this index to the correct SequencerVoice array
-                                // and update `currentVoices` when this changes.
-                                // For now, this is just a placeholder.
+    int currentOctaveIndex = 0; 
 
     void triggerNotesForStep(int step);
     void turnOffNotesForStep(int step);
-
-    // Helper to convert MIDI note number to frequency (if you ever need it)
-    // float midiNoteToFrequency(int midiNote); 
-    // Since you are using direct envelope control, this might not be strictly needed
-    // by the sequencer itself, but could be useful for other things.
 };
 
 #endif // SEQUENCER_H
