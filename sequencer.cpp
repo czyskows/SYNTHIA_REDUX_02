@@ -1,8 +1,12 @@
 #include "Sequencer.h" 
 #include <cstdint>     
 #include <cstring>     
-#include <font_LiberationMono.h>
 
+
+// Define TFT_SEAGREEN if not already defined by ILI9341_t3.h or another common header
+#ifndef TFT_SEAGREEN 
+#define TFT_SEAGREEN 0x3FE0 // Common value for SEAGREEN
+#endif
 
 
 Sequencer::Sequencer() : tft(nullptr), currentVoices(nullptr), is_playing(false), current_step(0), previous_step_drawn(-1), bpm(120.0f) {

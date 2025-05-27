@@ -377,40 +377,13 @@ void runTouchCalibration() {
         Serial.print(", Y="); Serial.print(raw_adc_points[i].y);
         Serial.print(", Z="); Serial.println(raw_adc_points[i].z);
     }
-    int16_t adc_val_for_screenX_left  = (raw_adc_points[0].y + raw_adc_points[3].y) / 2;
-    int16_t adc_val_for_screenX_right = (raw_adc_points[1].y + raw_adc_points[2].y) / 2;
-
-    int16_t adc_val_for_screenY_top    = (raw_adc_points[0].x + raw_adc_points[1].x) / 2;
-    int16_t adc_val_for_screenY_bottom = (raw_adc_points[3].x + raw_adc_points[2].x) / 2;
-
-    if (adc_val_for_screenX_left < adc_val_for_screenX_right) {
-      touch_adc_x_min = adc_val_for_screenX_left;
-      touch_adc_x_max = adc_val_for_screenX_right;
-    } else {
-      touch_adc_x_min = adc_val_for_screenX_right;
-      touch_adc_x_max = adc_val_for_screenX_left;
-    }
-
-    if (adc_val_for_screenY_top < adc_val_for_screenY_bottom) {
-      touch_adc_y_min = adc_val_for_screenY_top;
-      touch_adc_y_max = adc_val_for_screenY_bottom;
-    } else {
-      touch_adc_y_min = adc_val_for_screenY_bottom;
-      touch_adc_y_max = adc_val_for_screenY_top;
-    }
 
     // Update global calibration variables
-    touch_adc_x_min = (raw_adc_points[0].y + raw_adc_points[3].y) / 2; // Avg Y_ADC for Left Screen Edge (TL.y, BL.y)
-    touch_adc_x_max = (raw_adc_points[1].y + raw_adc_points[2].y) / 2; // Avg Y_ADC for Right Screen Edge (TR.y, BR.y)
-    if (touch_adc_x_min > touch_adc_x_max) std::swap(touch_adc_x_min, touch_adc_x_max); // Ensure min < max for this range
-
-    touch_adc_y_min = (raw_adc_points[0].x + raw_adc_points[1].x) / 2; // Avg X_ADC for Top Screen Edge (TL.x, TR.x)
-    touch_adc_y_max = (raw_adc_points[3].x + raw_adc_points[2].x) / 2; // Avg X_ADC for Bottom Screen Edge (BL.x, BR.x)
-    if (touch_adc_y_min > touch_adc_y_max) std::swap(touch_adc_y_min, touch_adc_y_max); // Ensure min < max
-
-
-    //if (touch_adc_x_min > touch_adc_x_max) { int16_t temp = touch_adc_x_min; touch_adc_x_min = touch_adc_x_max; touch_adc_x_max = temp; }
-    //if (touch_adc_y_min > touch_adc_y_max) { int16_t temp = touch_adc_y_min; touch_adc_y_min = touch_adc_y_max; touch_adc_y_max = temp; }
+    touch_adc_x_min = (raw_adc_points[0].x + raw_adc_points[3].x) / 2; 
+    touch_adc_x_max = (raw_adc_points[1].x + raw_adc_points[2].x) / 2; 
+    
+    touch_adc_y_min = (raw_adc_points[0].y + raw_adc_points[1].y) / 2; 
+    touch_adc_y_max = (raw_adc_points[3].y + raw_adc_points[2].y) / 2; 
 
     saveCalibrationData(); // Now save these adjusted values
 
@@ -471,28 +444,28 @@ bool getCalibratedScreenPoint(int* screen_x, int* screen_y) {
     if (ts.touched()) {
         TS_Point p = ts.getPoint();
         if (p.z > MIN_PRESSURE_THRESHOLD) {
-            int raw_screen_x_adc = p.y; // Screen X is from p.y
-            int raw_screen_y_adc = p.x; // Screen Y is from p.x
+            int raw_val_for_screen_X = p.x; // Screen X uses raw p.x
+            int raw_val_for_screen_Y = p.y; // Screen Y uses raw p.y
 
-            *screen_x = map(raw_screen_x_adc, 
-                            touch_adc_x_min, // Raw Y_ADC for screen Left
-                            touch_adc_x_max, // Raw Y_ADC for screen Right
-                            CAL_MARGIN,                // Screen Left output
-                            screenWidth - CAL_MARGIN); // Screen Right output
+            *screen_x = map(raw_val_for_screen_X, 
+                            touch_adc_x_max,    // Low p.x (Corresponds to Screen Left)
+                            touch_adc_x_min,    // High p.x (Corresponds to Screen Right)
+                            CAL_MARGIN,               // Screen Left output (e.g., 10)
+                            screenWidth - CAL_MARGIN); // Screen Right output (e.g., 310)
 
-            *screen_y = map(raw_screen_y_adc, 
-                            touch_adc_y_min, // Raw X_ADC for screen Top
-                            touch_adc_y_max, // Raw X_ADC for screen Bottom
-                            CAL_MARGIN,                 // Screen Top output
-                            screenHeight - CAL_MARGIN); // Screen Bottom output
+            *screen_y = map(raw_val_for_screen_Y, 
+                            touch_adc_y_min,    // Low p.y (Corresponds to Screen Bottom)
+                            touch_adc_y_max,    // High p.y (Corresponds to Screen Top)
+                            screenHeight - CAL_MARGIN, // Screen Bottom output (e.g., 230)
+                            CAL_MARGIN);               // Screen Top output (e.g., 10)
             
             *screen_x = constrain(*screen_x, 0, screenWidth - 1);
             *screen_y = constrain(*screen_y, 0, screenHeight - 1);
             return true;
         }
     }
-    *screen_x = -1; *screen_y = -1; // Indicate no valid touch
-    return false;
+    *screen_x = -1; *screen_y = -1;
+    return false; 
 }
 
 void sequencerScreen() {
@@ -564,67 +537,27 @@ int current_waveform1, current_waveform2, current_waveform3, current_filter = 0;
 
 //declare the control variable
 int   atck    = 10;
-float sust    = 0.4;
-int   decy    = 50;
-int   rels    = 600;
-int   deltime = 0;
-float delAmt  = 0.0;
-float fback   = 0.0;
-float dmix    = 0.0; 
-int   freq    = 1000;
-float reso    = 0.5;
-float room    = 0.0;
-float damp    = 0.0;
-float osc1Vol = 0.9; 
-float osc2Vol = 0.9;
-float osc3Vol = 0.9;
-float noizAmp = 0.0; 
-float pWidth1 = 128;
-float pWidth2 = 128;
-float pWidth3 = 128;
+float sust    = 0.4;  int   decy    = 50;   int   rels    = 600;  
+int   deltime = 0;    float delAmt  = 0.0;  float fback   = 0.0;  
+float dmix    = 0.0;  int   freq    = 1000; float reso    = 0.5;
+float room    = 0.0;  float damp    = 0.0;  float osc1Vol = 0.9; 
+float osc2Vol = 0.9;  float osc3Vol = 0.9;  float noizAmp = 0.0; 
+float pWidth1 = 128;  float pWidth2 = 128;  float pWidth3 = 128;
 //variables for the displa
 int atckD    = 170;
-int sustD    = 120;
-int decyD    = 120;
-int relsD    = 160;
-int deltimeD = 170;
-int delAmtD  = 170;
-int fbackD   = 170;
-int dmixD    = 170;
-int freqD    = 170;
-int resoD    = 170; 
-int roomD    = 170;
-int dampD    = 170;
-int osc1VolD = 70;
-int osc2VolD = 70;
-int osc3VolD = 70;
-int noizAmpD = 170;
+int sustD    = 120; int decyD    = 120; int relsD    = 160;
+int deltimeD = 170; int delAmtD  = 170; int fbackD   = 170;
+int dmixD    = 170; int freqD    = 170; int resoD    = 170; 
+int roomD    = 170; int dampD    = 170; int osc1VolD = 70;  
+int osc2VolD = 70;  int osc3VolD = 70;  int noizAmpD = 170;
 //VAriables for Note On/Off
-int Cval  = 0;
-int CSval = 0;
-int Dval  = 0;
-int DSval = 0;
-int Eval  = 0;
-int Fval  = 0;
-int FSval = 0;
-int Gval  = 0;
-int GSval = 0;
-int Aval  = 0;
-int ASval = 0;
-int Bval  = 0;
+int Cval  = 0;  int CSval = 0;  int Dval  = 0;  int DSval = 0;  
+int Eval  = 0;  int Fval  = 0;  int FSval = 0;  int Gval  = 0;
+int GSval = 0;  int Aval  = 0;  int ASval = 0;  int Bval  = 0;
 //Variables for Note On/Off Too
-int P_Cval  = 0;
-int P_CSval = 0;
-int P_Dval  = 0;
-int P_DSval = 0;
-int P_Eval  = 0;
-int P_Fval  = 0;
-int P_FSval = 0;
-int P_Gval  = 0;
-int P_GSval = 0; 
-int P_Aval  = 0;
-int P_ASval = 0;
-int P_Bval  = 0;
+int P_Cval  = 0;  int P_CSval = 0;  int P_Dval  = 0;  int P_DSval = 0;
+int P_Eval  = 0;  int P_Fval  = 0;  int P_FSval = 0;  int P_Gval  = 0;
+int P_GSval = 0;  int P_Aval  = 0;  int P_ASval = 0;  int P_Bval  = 0;
 
 float gain1 = .75;
 float amp1  = .9;
@@ -773,7 +706,7 @@ void setup() {
         tft.fillScreen(ILI9341_BLACK);
     }
 
-  ts.setRotation(2 );
+  ts.setRotation(3);
   tft.setCursor(20,100);
   tft.setFont(LiberationMono_48);
   tft.setTextColor(ILI9341_WHITE);
@@ -941,6 +874,16 @@ void setup() {
 
 ////////////////////////////////////////////////////////LOOP/////////////////////////////////////////////////////////////////////////////
 void loop() {
+
+  if (ts.touched()) {
+        TS_Point p = ts.getPoint();
+        if (p.z > 10) { // Low threshold for testing
+            Serial.print("Raw -- X_ADC: "); Serial.print(p.x);
+            Serial.print("    Y_ADC: "); Serial.print(p.y);
+            Serial.print("    Pressure_Z: "); Serial.println(p.z);
+        }
+    }
+    delay(50); // To make serial readable
 
   //////////Slider Value Change///////////////////
   sliChange1 = digitalRead(change4);

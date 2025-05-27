@@ -2,8 +2,9 @@
 #define SEQUENCER_H
 
 #include <ILI9341_t3.h> 
-#include <Audio.h>    
+#include <Audio.h>      
 #include "frequencies.h" 
+#include <font_LiberationMono.h>
 
 // Structure to hold a waveform and its corresponding envelope
 struct SequencerVoice {
