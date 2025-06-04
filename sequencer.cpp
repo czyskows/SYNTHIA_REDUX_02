@@ -2,16 +2,19 @@
 #include <cstdint>     
 #include <cstring>     
 
-Sequencer::Sequencer() : tft(nullptr), currentVoices(nullptr), 
-                         current_sequence_total_steps(16), current_page_index(0), // Initialize new members
-                         is_playing(false), current_step(0), previous_step_drawn(-1), bpm(120.0f) {
-    for (int s = 0; s < MAX_TOTAL_STEPS; ++s) { // Initialize for max steps
+Sequencer::Sequencer() : 
+    tft(nullptr), currentVoices(nullptr), 
+    current_sequence_total_steps(16), current_page_index(0), // Default to 16 steps, page 0
+    is_playing(false), current_step(0), previous_step_drawn(-1), 
+    bpm(120.0f), time_since_last_step(0), currentOctaveIndex(0) 
+{
+    for (int s = 0; s < MAX_TOTAL_STEPS; ++s) {
         note_velocity[s] = 100; 
         for (int n = 0; n < NUM_NOTES; ++n) { 
             note_active[s][n] = false;
         }
     }
-    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) { // Initialize touch state for visible page
+    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) {
          for (int n = 0; n < NUM_NOTES; ++n) {
             touch_was_pressed_on_grid[s_page][n] = false;
          }
@@ -19,7 +22,6 @@ Sequencer::Sequencer() : tft(nullptr), currentVoices(nullptr),
         last_touch_y_on_fader[s_page] = -1;
     }
     step_duration_ms = (60000.0f / bpm) / 4.0f; 
-    time_since_last_step = 0;
 }
 
 void Sequencer::init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, int initialTempo, int initialTotalSteps) {
@@ -31,11 +33,11 @@ void Sequencer::init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, in
     screenWidth = tft->width();
     screenHeight = tft->height();
     
-    setTotalSteps(initialTotalSteps); // Set initial total steps
-    current_page_index = 0;
+    setTotalSteps(initialTotalSteps); // Set initial total steps, this also validates page_index
+    current_page_index = 0;           // Start on the first page
 
-    // gridWidth is already STEPS_PER_PAGE * cellWidth
-    gridHeight = NUM_NOTES * cellHeight;
+    gridWidth = STEPS_PER_PAGE * cellWidth; 
+    gridHeight = NUM_NOTES * cellHeight;   
     faderAreaStartY = gridStartY + gridHeight + 10; 
     faderAreaHeight = faderMaxHeight + 5;
 
@@ -52,12 +54,9 @@ void Sequencer::play() {
     is_playing = true;
     time_since_last_step = 0; 
     // When playing, ensure the step highlighter starts from the correct visual step if current_step is on a different page
-    int visual_step_on_current_page = current_step - (current_page_index * STEPS_PER_PAGE);
-    if (visual_step_on_current_page < 0 || visual_step_on_current_page >= STEPS_PER_PAGE) {
-        previous_step_drawn = -1; // Force redraw if current_step is not on current page
-    } else {
-        previous_step_drawn = (visual_step_on_current_page == 0) ? (STEPS_PER_PAGE -1) : (visual_step_on_current_page -1);
-    }
+    // The previous_step_drawn should be an actual data step.
+    // If current_step is 0, the "previous" for highlighting purposes could be the last step of the sequence.
+    previous_step_drawn = (current_step == 0) ? (current_sequence_total_steps -1) : (current_step -1);
 }
 
 void Sequencer::stop() {
@@ -73,25 +72,19 @@ void Sequencer::stop() {
     }
 }
 
-// <<<< NEW METHOD IMPLEMENTATION >>>>
 void Sequencer::resetPlaybackPosition() {
-    bool was_playing_before_reset = is_playing; // Store current play state
+    bool was_playing_before_reset = is_playing; 
     if (is_playing) {
-        stop(); // Call stop to turn off notes and set is_playing to false
+        stop(); // Turns off notes and sets is_playing = false
     }
     current_step = 0;
-    time_since_last_step = 0; // Reset timer
-    
-    // Force highlighter update if GUI is active
-    // previous_step_drawn is set to -1 or an invalid step to ensure highlightCurrentStep redraws correctly
-    // when update() is next called with guiIsActive = true.
-    previous_step_drawn = STEPS_PER_PAGE; // Or any value that will trigger a redraw
+    time_since_last_step = 0; 
+    previous_step_drawn = current_sequence_total_steps; // Force redraw of step 0 as current
 
     if (was_playing_before_reset) {
-        play(); // Resume playing from step 0 if it was playing before reset
+        play(); // Resume playing from step 0
     }
-    // If it wasn't playing, it remains stopped at step 0.
-    // The visual update will occur in the next update(guiIsActive) call.
+    // Visual update will happen in the next update(guiIsActive) call if GUI is active.
 }
 
 
@@ -100,33 +93,48 @@ bool Sequencer::isPlaying() const {
 }
 
 void Sequencer::setTotalSteps(int totalSteps) {
-    if (totalSteps == 8 || totalSteps == 16 || totalSteps == 24 || totalSteps == 32) {
+    if (totalSteps == 8 || totalSteps == 16 || totalSteps == 24 || totalSteps == MAX_TOTAL_STEPS) { // Use MAX_TOTAL_STEPS for 32
+        bool was_playing = is_playing;
+        if(was_playing) stop();
+
         current_sequence_total_steps = totalSteps;
-        // Ensure current_step and current_page_index are valid
         if (current_step >= current_sequence_total_steps) {
-            current_step = 0; // Reset if current step is now out of bounds
+            current_step = 0; 
         }
         int max_page_index = (current_sequence_total_steps / STEPS_PER_PAGE) - 1;
+        if (max_page_index < 0) max_page_index = 0; // Handle case of 8 steps (1 page)
         if (current_page_index > max_page_index) {
             current_page_index = max_page_index;
         }
-        if (tft) drawPageIndicator(); // Update page display if GUI is active
+        if (tft) { // If GUI might be active
+            drawGrid(); // Redraw grid for new length/page
+            drawVelocities();
+            drawPageIndicator();
+            highlightCurrentStep();
+        }
+        if(was_playing) play();
     }
 }
 
 void Sequencer::setPage(int pageIndex) {
-    int max_page_index = (current_sequence_total_steps / STEPS_PER_PAGE) - 1;
-    if (pageIndex >= 0 && pageIndex <= max_page_index) {
-        if (current_page_index != pageIndex) {
-            current_page_index = pageIndex;
-            // When page changes, force redraw of grid and velocities for the new page
-            if (tft) { // Only if tft is available
-                drawGrid();
-                drawVelocities();
-                drawPageIndicator();
-                // Also ensure highlighter is correct for the new page
-                highlightCurrentStep(); // This will use the global current_step
-            }
+    int num_pages = current_sequence_total_steps / STEPS_PER_PAGE;
+    if (num_pages == 0 && current_sequence_total_steps > 0) num_pages = 1; // e.g. if total_steps < STEPS_PER_PAGE but > 0
+    if (num_pages == 0) num_pages = 1; // Default to 1 page if total_steps is 0 or very small
+
+    int max_page_index = num_pages - 1;
+    if (max_page_index < 0) max_page_index = 0;
+
+
+    if (pageIndex < 0) pageIndex = 0; 
+    if (pageIndex > max_page_index) pageIndex = max_page_index; 
+
+    if (current_page_index != pageIndex) {
+        current_page_index = pageIndex;
+        if (tft) { 
+            drawGrid();
+            drawVelocities();
+            drawPageIndicator();
+            highlightCurrentStep(); 
         }
     }
 }
@@ -167,31 +175,10 @@ void Sequencer::update(bool guiIsActive) {
         if (time_since_last_step >= step_duration_ms) {
             time_since_last_step -= step_duration_ms; 
 
-            int step_to_turn_off_notes = current_step; // Turn off notes of the step that just finished
-                                                       // or the one before current_step if current_step already advanced
-                                                       // Logic: turn off notes for the step that was *just playing*
-
-            // If current_step is 0, the step that just finished was the last step of the sequence
-            if (current_step == 0) {
-                 step_to_turn_off_notes = current_sequence_total_steps -1;
-            } else {
-                 step_to_turn_off_notes = current_step -1;
-            }
-            // This needs to be more robust with note hold logic later.
-            // For now, assume notes last one step.
-            // The `triggerNotesForStep` will play the new step.
-            // `turnOffNotesForStep` should ideally turn off notes from the *previous logical step index*.
-            
-            // Let's refine: turn off notes for the step that *was* current_step before advancing
             int previous_logical_step = current_step;
-
-            // Advance step first
-            current_step = (current_step + 1) % current_sequence_total_steps; // Use dynamic total steps
-
-            // Turn off notes from the step that just finished
-            turnOffNotesForStep(previous_logical_step);
+            current_step = (current_step + 1) % current_sequence_total_steps; // Use new total steps
             
-            // Trigger notes for the new current_step
+            turnOffNotesForStep(previous_logical_step);
             triggerNotesForStep(current_step);
         }
     }
@@ -202,12 +189,12 @@ void Sequencer::update(bool guiIsActive) {
 }
 
 
-void Sequencer::triggerNotesForStep(int step_index) { // step_index is 0 to current_sequence_total_steps-1
-    if (!currentVoices || step_index < 0 || step_index >= current_sequence_total_steps) return;
+void Sequencer::triggerNotesForStep(int actual_data_step) { 
+    if (!currentVoices || actual_data_step < 0 || actual_data_step >= current_sequence_total_steps) return;
     for (int n = 0; n < NUM_NOTES; ++n) { 
-        if (note_active[step_index][n]) {
+        if (note_active[actual_data_step][n]) { // Access using actual_data_step
             if (currentVoices[n].waveform && currentVoices[n].envelope) {
-                float amp = note_velocity[step_index] / 127.0f;
+                float amp = note_velocity[actual_data_step] / 127.0f; // Use actual_data_step
                 currentVoices[n].waveform->amplitude(amp); 
                 currentVoices[n].envelope->noteOn();
             }
@@ -215,10 +202,10 @@ void Sequencer::triggerNotesForStep(int step_index) { // step_index is 0 to curr
     }
 }
 
-void Sequencer::turnOffNotesForStep(int step_index) { // step_index is 0 to current_sequence_total_steps-1
-    if (!currentVoices || step_index < 0 || step_index >= current_sequence_total_steps) return;
+void Sequencer::turnOffNotesForStep(int actual_data_step) { 
+    if (!currentVoices || actual_data_step < 0 || actual_data_step >= current_sequence_total_steps) return;
     for (int n = 0; n < NUM_NOTES; ++n) { 
-        if (note_active[step_index][n]) { // Only turn off if it was supposed to be active
+        if (note_active[actual_data_step][n]) { // Access using actual_data_step
             if (currentVoices[n].envelope) {
                 currentVoices[n].envelope->noteOff();
             }
@@ -230,20 +217,19 @@ void Sequencer::drawFullGUI() {
     if (!tft) return;
     tft->fillScreen(colorBackground);
     drawNoteNames();
-    drawGrid(); // Will draw current page
-    drawVelocities(); // Will draw current page
+    drawGrid(); 
+    drawVelocities(); 
     drawControls();
     updateTempoDisplay(); 
-    drawPageIndicator(); // Draw initial page indicator
+    drawPageIndicator(); 
     highlightCurrentStep(); 
 }
 
-void Sequencer::drawGUI() { // For partial updates if sequencer screen is active
+void Sequencer::drawGUI() { 
     if (!tft) return;
     drawGrid(); 
     drawVelocities(); 
     drawPageIndicator();
-    // highlightCurrentStep(); // Handled by update()
 }
 
 void Sequencer::drawNoteNames() {
@@ -269,14 +255,14 @@ void Sequencer::drawGrid() {
     if (!tft) return;
     int start_step_of_page = current_page_index * STEPS_PER_PAGE;
 
-    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) { // Loop for visible steps on page
+    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) { 
         int actual_data_step = start_step_of_page + s_page;
         for (int n = 0; n < NUM_NOTES; ++n) { 
-            int x = gridStartX + s_page * cellWidth; // Use s_page for screen X position
+            int x = gridStartX + s_page * cellWidth; 
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
             
-            uint16_t cellColor = colorCellOff;
-            if (actual_data_step < current_sequence_total_steps) { // Only access data if within total steps
+            uint16_t cellColor = colorCellOff; // Default to off if step is beyond total length
+            if (actual_data_step < current_sequence_total_steps) { 
                  cellColor = note_active[actual_data_step][n] ? colorCellOn : colorCellOff;
             }
             tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, cellColor);
@@ -289,14 +275,14 @@ void Sequencer::drawVelocities() {
     if (!tft) return;
     int start_step_of_page = current_page_index * STEPS_PER_PAGE;
 
-    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) { // Loop for visible steps on page
+    for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) { 
         int actual_data_step = start_step_of_page + s_page;
-        int x = faderAreaStartX + s_page * faderWidth; // Use s_page for screen X position
+        int x = faderAreaStartX + s_page * faderWidth; 
         int y_fader_area = faderAreaStartY; 
         tft->fillRect(x + 1, y_fader_area + 1, faderWidth - 2, faderMaxHeight - 1, colorBackground);
         
-        int barHeight = 1; // Default to min bar height
-        if (actual_data_step < current_sequence_total_steps) { // Only access data if within total steps
+        int barHeight = 1; 
+        if (actual_data_step < current_sequence_total_steps) { 
             barHeight = (note_velocity[actual_data_step] / 127.0f) * (faderMaxHeight - 2); 
             if (barHeight < 1) barHeight = 1; 
         }
@@ -309,44 +295,38 @@ void Sequencer::highlightCurrentStep() {
     if (!tft) return;
 
     int start_step_of_page = current_page_index * STEPS_PER_PAGE;
-    int end_step_of_page = start_step_of_page + STEPS_PER_PAGE -1;
+    int end_step_of_page = start_step_of_page + STEPS_PER_PAGE - 1;
 
-    // Determine the visual representation of the previous_step_drawn on the current page
-    int visual_previous_step = -1;
-    if (previous_step_drawn >= start_step_of_page && previous_step_drawn <= end_step_of_page) {
-        visual_previous_step = previous_step_drawn - start_step_of_page;
-    }
-    
-    // Determine the visual representation of current_step on the current page
-    int visual_current_step = -1;
-    if (current_step >= start_step_of_page && current_step <= end_step_of_page && current_step < current_sequence_total_steps) {
-        visual_current_step = current_step - start_step_of_page;
-    }
-
-
-    // Clear previous highlight only if it was on the current page and is different from new current step
-    if (visual_previous_step != -1 && previous_step_drawn != current_step) {
+    // Clear previous highlight if it was on the current page and is different
+    if (previous_step_drawn != current_step && 
+        previous_step_drawn >= start_step_of_page && 
+        previous_step_drawn <= end_step_of_page &&
+        previous_step_drawn < current_sequence_total_steps) {
+        
+        int visual_prev_step_on_page = previous_step_drawn - start_step_of_page;
         for (int n = 0; n < NUM_NOTES; ++n) { 
-            int x = gridStartX + visual_previous_step * cellWidth;
+            int x = gridStartX + visual_prev_step_on_page * cellWidth;
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
-            uint16_t cellColor = colorCellOff;
-            if(previous_step_drawn < current_sequence_total_steps) { // Check bounds for data access
-                cellColor = note_active[previous_step_drawn][n] ? colorCellOn : colorCellOff;
-            }
+            uint16_t cellColor = note_active[previous_step_drawn][n] ? colorCellOn : colorCellOff;
             tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, cellColor); 
             tft->drawRect(x, y, cellWidth, cellHeight, colorGridLines); 
         }
     }
     
     // Draw new highlight if playing and current_step is on the current page
-    if (is_playing && visual_current_step != -1) {
+    if (is_playing && 
+        current_step >= start_step_of_page && 
+        current_step <= end_step_of_page && 
+        current_step < current_sequence_total_steps) {
+        
+        int visual_current_step_on_page = current_step - start_step_of_page;
         for (int n = 0; n < NUM_NOTES; ++n) { 
-            int x = gridStartX + visual_current_step * cellWidth;
+            int x = gridStartX + visual_current_step_on_page * cellWidth;
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
             tft->drawRect(x, y, cellWidth, cellHeight, colorCurrentStepHighlight);
         }
     }
-    previous_step_drawn = current_step; // Store the actual data step index
+    previous_step_drawn = current_step; 
 }
 
 void Sequencer::drawControls() {
@@ -367,7 +347,7 @@ void Sequencer::drawControls() {
 void Sequencer::updateTempoDisplay() {
     if (!tft) return; 
     int tempoDisplayX = stopButtonX; 
-    int tempoDisplayY = playButtonY - 15; 
+    int tempoDisplayY = stopButtonY - 15; 
 
     tft->setFont(LiberationMono_10); 
     tft->setTextSize(1);   
@@ -382,13 +362,18 @@ void Sequencer::drawPageIndicator() {
     if (!tft) return;
     tft->setFont(LiberationMono_10);
     tft->setTextSize(1);
-    tft->fillRect(pageDisplayX, pageDisplayY, 80, 10, colorBackground); // Clear old text
-    tft->setCursor(pageDisplayX, pageDisplayY);
+    tft->fillRect(180, 160, 80, 10, colorBackground); 
+    tft->setCursor(180, 160);
     tft->setTextColor(colorText);
     tft->print("Page: ");
     tft->print(current_page_index + 1);
     tft->print("/");
-    tft->print(current_sequence_total_steps / STEPS_PER_PAGE);
+    if (STEPS_PER_PAGE > 0 && current_sequence_total_steps > 0) { 
+        int total_pages = (current_sequence_total_steps + STEPS_PER_PAGE - 1) / STEPS_PER_PAGE; // Ceiling division
+        tft->print(total_pages);
+    } else {
+        tft->print("1"); // Default to 1 page if steps are 0 or invalid
+    }
 }
 
 
@@ -399,17 +384,16 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
     bool needsRedrawVelocities = false;
     int start_step_of_page = current_page_index * STEPS_PER_PAGE;
 
-    // --- Grid Interaction ---
-    if (touchX >= gridStartX && touchX < gridStartX + gridWidth && // gridWidth is for visible page
+    if (touchX >= gridStartX && touchX < gridStartX + gridWidth && 
         touchY >= gridStartY && touchY < gridStartY + gridHeight) {
-        int page_step_touched = (touchX - gridStartX) / cellWidth; // Step index on current page (0-7)
+        int page_step_touched = (touchX - gridStartX) / cellWidth; 
         int screen_row_touched = (touchY - gridStartY) / cellHeight; 
 
         if (screen_row_touched >= 0 && screen_row_touched < NUM_NOTES) {
             int note_data_index = (NUM_NOTES - 1) - screen_row_touched; 
             int actual_data_step = start_step_of_page + page_step_touched;
 
-            if (actual_data_step < current_sequence_total_steps) { // Ensure we're not touching beyond total steps
+            if (actual_data_step < current_sequence_total_steps) { 
                 if (isPressed && !touch_was_pressed_on_grid[page_step_touched][note_data_index]) {
                     note_active[actual_data_step][note_data_index] = !note_active[actual_data_step][note_data_index];
                     touch_was_pressed_on_grid[page_step_touched][note_data_index] = true;
@@ -425,19 +409,18 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
         }
     }
 
-    // --- Velocity Fader Interaction ---
     if (touchX >= faderAreaStartX && touchX < faderAreaStartX + STEPS_PER_PAGE * faderWidth &&
         touchY >= faderAreaStartY && touchY < faderAreaStartY + faderMaxHeight) {
-        int page_step_touched = (touchX - faderAreaStartX) / faderWidth; // Step index on current page (0-7)
+        int page_step_touched = (touchX - faderAreaStartX) / faderWidth; 
         int actual_data_step = start_step_of_page + page_step_touched;
 
-        if (actual_data_step < current_sequence_total_steps) { // Ensure we're not touching beyond total steps
+        if (actual_data_step < current_sequence_total_steps) { 
             if (isPressed) {
                 int rawVelocity = 127 - ((touchY - faderAreaStartY) * 127 / (faderMaxHeight -1));
                 if (rawVelocity < 0) rawVelocity = 0;
                 if (rawVelocity > 127) rawVelocity = 127;
                 if (!touch_was_pressed_on_fader[page_step_touched] || abs(touchY - last_touch_y_on_fader[page_step_touched]) > 1 ) { 
-                    note_velocity[actual_data_step] = rawVelocity; // Use actual_data_step for data storage
+                    note_velocity[actual_data_step] = rawVelocity; 
                     needsRedrawVelocities = true; 
                 }
                 touch_was_pressed_on_fader[page_step_touched] = true;
@@ -456,7 +439,6 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
         }
     }
 
-    // --- Control Button Interaction (Play/Stop only) ---
     static bool playPressedLast = false;
     static bool stopPressedLast = false;
 

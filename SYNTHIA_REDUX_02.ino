@@ -270,6 +270,8 @@ struct TouchCalibrationData {
 Sequencer sequencer;
 SequencerVoice C3_B3_voices[Sequencer::NUM_NOTES];
 
+static int previous_sliderVal2_for_length = -1; // variabel for sequencer screens
+
 enum AppScreen {
   SCREEN_ENVELOPE, //default
   SCREEN_DELAY,
@@ -810,7 +812,7 @@ void setup() {
   C3_B3_voices[10] = {&waveformAS3, &env11, "A#3"}; // A-sharp
   C3_B3_voices[11] = {&waveformB3,  &env12,  "B3"};
 
-  sequencer.init(&tft, C3_B3_voices, 120);
+  sequencer.init(&tft, C3_B3_voices, 120, 16);
 
   ///////////ENABLE QTOUCH/////////////
   Serial.println("Calibrating QTouch sensors...");
@@ -1740,6 +1742,14 @@ void loop() {
         tft.fillRect(30, 220, 30, 10, ILI9341_BLACK); 
         sequencer.setTempo(map(sliderVal4, 0, 255, 50, 150));
       }
+      // int slider2_value = your_function_to_read_slider2(); // Get slider2 raw value
+      int num_pages = (sequencer.current_sequence_total_steps + Sequencer::STEPS_PER_PAGE - 1) / Sequencer::STEPS_PER_PAGE; // Ceiling division
+      if (num_pages == 0) num_pages = 1; // At least one page
+
+      int new_page_index = map(sliderVal3, 0, 255, 0, num_pages -1 );
+      new_page_index = constrain(new_page_index, 0, num_pages -1); // Ensure it's valid
+
+      sequencer.setPage(new_page_index); // This will only redraw if the page actually changes
       if(status1.keys == 16){sequencer.play();}
       if(status1.keys == 8) {sequencer.stop();}
       if (!shift) { 
@@ -1749,8 +1759,24 @@ void loop() {
           sequencer.drawFullGUI(); // Or just sequencer.highlightCurrentStep() if that's enough
           }
         } 
-        
-        
+      }
+      int desired_total_steps = sequencer.current_sequence_total_steps; // Start with current
+      if (sliderVal2 != previous_sliderVal2_for_length) {
+        if (sliderVal2 < 64) {         // Zone 1: 0-63
+            desired_total_steps = 8;
+        } else if (sliderVal2 < 128) { // Zone 2: 64-127
+            desired_total_steps = 16;
+        } else if (sliderVal2 < 192) { // Zone 3: 128-191
+            desired_total_steps = 24;
+        } else {                       // Zone 4: 192-255
+            desired_total_steps = 32;
+        }
+
+        if (desired_total_steps != sequencer.current_sequence_total_steps) {
+            sequencer.setTotalSteps(desired_total_steps);
+            Serial.print("Sequencer total steps set to: "); Serial.println(desired_total_steps);
+        }
+        previous_sliderVal2_for_length = sliderVal2;
       }
     }
 
