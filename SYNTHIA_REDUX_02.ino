@@ -192,7 +192,7 @@ AudioControlSGTL5000     sgtl5000_1;     //xy=1337.5,705
 #include <EEPROM.h>
 
 #define change1 28
-#define change2 29
+#define change2 29PM:
 #define change3 30
 #define change4 31
 #define change5 32
@@ -688,7 +688,7 @@ void setup() {
     screen_points[3][0] = CAL_MARGIN;                screen_points[3][1] = screenHeight - CAL_MARGIN;  // Bottom-Left
 
     // Load calibration data or run calibration if needed
-    if (!loadCalibrationData()) { // If loading fails or data is invalid
+    if (!loadCalibrationData() ) { // If loading fails or data is invalid
         Serial.println("Running touch screen calibration routine...");
         tft.fillScreen(ILI9341_BLACK);
         tft.setCursor(10, screenHeight / 2 - 20);
@@ -1121,10 +1121,10 @@ void loop() {
 
   switch (currentAppScreen) {
       case SCREEN_ENVELOPE:
-          envelopeScreen(); 
+          //envelopeScreen(); 
           break;
       case SCREEN_WAVEFORM:
-          waveformScreen(); 
+          //waveformScreen(); 
           break;
       case SCREEN_OCTAVE:
           octaveScreen();   
@@ -1133,16 +1133,16 @@ void loop() {
           sequencerScreen(); 
           break;
       case SCREEN_REVERB:
-          reverbScreen(); 
+          //reverbScreen(); 
           break;
       case SCREEN_FILTER:
-          filterScreen(); 
+          //filterScreen(); 
           break;
       case SCREEN_LEVELS:
-          levelsScreen(); 
+          //levelsScreen(); 
           break;
       case SCREEN_DELAY:
-          delayScreen(); 
+          //delayScreen(); 
           break;
   }
 
@@ -1742,6 +1742,16 @@ void loop() {
       }
       if(status1.keys == 16){sequencer.play();}
       if(status1.keys == 8) {sequencer.stop();}
+      if (!shift) { 
+        if (func == 32) {
+          sequencer.resetPlaybackPosition();  
+          if (currentAppScreen == SCREEN_SEQUENCER) {
+          sequencer.drawFullGUI(); // Or just sequencer.highlightCurrentStep() if that's enough
+          }
+        } 
+        
+        
+      }
     }
 
     if(buttonState == 6){

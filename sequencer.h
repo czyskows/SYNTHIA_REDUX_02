@@ -15,41 +15,51 @@ struct SequencerVoice {
 
 class Sequencer {
 public:
-    static const int NUM_STEPS = 8;  // USER MODIFIED
-    static const int NUM_NOTES = 12; // For one octave (C3 to B3)
+    // Constants for step configuration
+    static const int MAX_TOTAL_STEPS = 32; // Maximum possible steps
+    static const int STEPS_PER_PAGE = 8;   // Steps visible on screen at once
+    static const int NUM_NOTES = 12; // This remains the number of vertical note rows
+    // Publicly accessible to allow .ino to set it based on controls
+    int current_sequence_total_steps; // Active total steps (8, 16, 24, or 32)
+    int current_page_index;           // Which 8-step page is visible (0, 1, 2, or 3)
+
 
     // --- GUI Dimensions & Colors (Customize these) ---
     int screenWidth; 
     int screenHeight; 
     
-    int gridStartX = 10;        // USER MODIFIED
-    int gridStartY = 10;        // USER MODIFIED
-    int cellWidth = 21;         // USER MODIFIED
-    int cellHeight = 12;        // USER MODIFIED
-    int gridWidth = NUM_STEPS * cellWidth;
-    int gridHeight = NUM_NOTES * cellHeight;
+    int gridStartX = 10;        
+    int gridStartY = 10;        
+    int cellWidth = 21; // Width to display STEPS_PER_PAGE         
+    int cellHeight = 12;        
+    int gridWidth = STEPS_PER_PAGE * cellWidth; // Grid width is for visible steps
+    int gridHeight; // Calculated in init based on NUM_NOTES
 
     int faderAreaStartX = gridStartX;
-    int faderAreaStartY; // Calculated in init
+    int faderAreaStartY; 
     int faderWidth = cellWidth; 
     int faderMaxHeight = 30;    
     int faderAreaHeight = faderMaxHeight + 5; 
 
-    int playButtonX = 174;      // USER MODIFIED
-    int playButtonY; // Calculated in init
+    int playButtonX = 174;      
+    int playButtonY; 
     int playButtonWidth = 60;
     int playButtonHeight = 25;
 
-    int stopButtonX; // Calculated in init
-    int stopButtonY; // Calculated in init
+    int stopButtonX; 
+    int stopButtonY; 
     int stopButtonWidth = 60;
     int stopButtonHeight = 25;
+
+    // Page display
+    int pageDisplayX = 10;
+    int pageDisplayY; // Will be set below buttons
 
     // Colors
     uint16_t colorBackground = ILI9341_BLACK;
     uint16_t colorGridLines = ILI9341_DARKGREY;
-    uint16_t colorCellOff = ILI9341_BLACK;     // USER MODIFIED
-    uint16_t colorCellOn = TFT_SEAGREEN;       // USER MODIFIED (Ensure TFT_SEAGREEN is defined, e.g. from ILI9341_t3.h or as 0x3FE0)
+    uint16_t colorCellOff = ILI9341_BLACK;     
+    uint16_t colorCellOn = TFT_SEAGREEN;       
     uint16_t colorCurrentStepHighlight = ILI9341_GREEN;
     uint16_t colorVelocityBar = ILI9341_CYAN;
     uint16_t colorText = ILI9341_WHITE;
@@ -59,8 +69,8 @@ public:
 
     Sequencer();
 
-    void init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, int initialTempo = 120);
-    void update(bool guiIsActive); // MODIFIED: Added guiIsActive parameter
+    void init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, int initialTempo = 120, int initialTotalSteps = 16);
+    void update(bool guiIsActive); 
     void drawGUI(); 
     void drawFullGUI(); 
     void drawGrid();
@@ -69,14 +79,19 @@ public:
     void drawNoteNames();
     void highlightCurrentStep();
     void updateTempoDisplay(); 
+    void drawPageIndicator(); // For multi-page display
 
     void handleTouch(int touchX, int touchY, bool isPressed);
 
     void play();
     void stop();
+    void resetPlaybackPosition(); // <<<< NEW METHOD
     void setTempo(int newTempo);
     int getTempo() const;
     bool isPlaying() const;
+
+    void setTotalSteps(int totalSteps); // Method to change total sequence length
+    void setPage(int pageIndex);        // Method to change visible page
 
     void setCurrentOctaveVoices(SequencerVoice* voicesForOctave);
     void shiftOctave(int direction); 
@@ -85,20 +100,20 @@ public:
 private:
     ILI9341_t3* tft; 
     SequencerVoice* currentVoices; 
-
-    bool note_active[NUM_STEPS][NUM_NOTES]; 
-    uint8_t note_velocity[NUM_STEPS]; 
+    // Data arrays now use MAX_TOTAL_STEPS
+    bool note_active[MAX_TOTAL_STEPS][NUM_NOTES]; 
+    uint8_t note_velocity[MAX_TOTAL_STEPS]; 
 
     bool is_playing;
-    int current_step;
+    int current_step; // This will now go from 0 to current_sequence_total_steps - 1
     int previous_step_drawn; 
     float bpm;
     unsigned long step_duration_ms;
     elapsedMillis time_since_last_step;
 
-    bool touch_was_pressed_on_grid[NUM_STEPS][NUM_NOTES]; 
-    bool touch_was_pressed_on_fader[NUM_STEPS];
-    int  last_touch_y_on_fader[NUM_STEPS];
+    bool touch_was_pressed_on_grid[STEPS_PER_PAGE][NUM_NOTES]; // Touch grid is for visible page
+    bool touch_was_pressed_on_fader[STEPS_PER_PAGE];          // Touch faders are for visible page
+    int  last_touch_y_on_fader[STEPS_PER_PAGE];
     
     int currentOctaveIndex = 0; 
 
