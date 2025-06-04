@@ -192,7 +192,7 @@ AudioControlSGTL5000     sgtl5000_1;     //xy=1337.5,705
 #include <EEPROM.h>
 
 #define change1 28
-#define change2 29PM:
+#define change2 29
 #define change3 30
 #define change4 31
 #define change5 32
