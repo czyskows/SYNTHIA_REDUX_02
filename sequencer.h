@@ -23,7 +23,7 @@ public:
     // Publicly accessible to allow .ino to set it based on controls
     int current_sequence_total_steps; // Active total steps (e.g., 8, 16, 24, or 32)
     int current_page_index;           // Which 8-step page is visible (0, 1, 2, or 3)
-
+    bool current_entry_mode_is_tie; 
 
     // --- GUI Dimensions & Colors ---
     int screenWidth; 
@@ -52,10 +52,6 @@ public:
     int stopButtonWidth = 60;
     int stopButtonHeight = 25;
 
-    // Page display
-    int pageDisplayX = playButtonX - 15; // X position for "Page: X/Y" text
-    int pageDisplayY = 195;      // Y position, calculated in init
-
     // Colors
     uint16_t colorBackground = ILI9341_BLACK;
     uint16_t colorGridLines = ILI9341_DARKGREY;
@@ -80,7 +76,7 @@ public:
     void drawNoteNames();
     void highlightCurrentStep();
     void updateTempoDisplay(); 
-    void drawPageIndicator(); // NEW: To display current page info
+    void drawPageIndicator(); 
 
     void handleTouch(int touchX, int touchY, bool isPressed);
 
@@ -91,8 +87,10 @@ public:
     int getTempo() const;
     bool isPlaying() const;
 
-    void setTotalSteps(int totalSteps); // NEW: To change total sequence length
-    void setPage(int pageIndex);        // NEW: To change visible page
+    void setTotalSteps(int totalSteps); 
+    void setPage(int pageIndex);        
+    void toggleTieEntryMode();        
+    bool isTieEntryModeActive() const;  
 
     void setCurrentOctaveVoices(SequencerVoice* voicesForOctave);
     void shiftOctave(int direction); 
@@ -105,6 +103,7 @@ private:
     // Data arrays are sized for the maximum possible steps
     bool note_active[MAX_TOTAL_STEPS][NUM_NOTES]; 
     uint8_t note_velocity[MAX_TOTAL_STEPS]; 
+    bool note_is_tied[MAX_TOTAL_STEPS][NUM_NOTES];
 
     bool is_playing;
     int current_step; // This will now go from 0 to current_sequence_total_steps - 1

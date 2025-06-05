@@ -4,7 +4,8 @@
 
 Sequencer::Sequencer() : 
     tft(nullptr), currentVoices(nullptr), 
-    current_sequence_total_steps(16), current_page_index(0), // Default to 16 steps, page 0
+    current_sequence_total_steps(16), current_page_index(0),
+    current_entry_mode_is_tie(false), // <<<< Initialize new member
     is_playing(false), current_step(0), previous_step_drawn(-1), 
     bpm(120.0f), time_since_last_step(0), currentOctaveIndex(0) 
 {
@@ -12,6 +13,7 @@ Sequencer::Sequencer() :
         note_velocity[s] = 100; 
         for (int n = 0; n < NUM_NOTES; ++n) { 
             note_active[s][n] = false;
+            note_is_tied[s][n] = false; // <<<< Initialize new array
         }
     }
     for (int s_page = 0; s_page < STEPS_PER_PAGE; ++s_page) {
@@ -44,7 +46,7 @@ void Sequencer::init(ILI9341_t3* tftDisplay, SequencerVoice* voicesForOctave, in
     playButtonY = faderAreaStartY + faderAreaHeight + 10; 
     stopButtonX = playButtonX + playButtonWidth + 10;
     stopButtonY = playButtonY;
-    pageDisplayY = playButtonY + playButtonHeight + 5; // Position page display below buttons
+    //pageDisplayY = playButtonY + playButtonHeight + 5; // Position page display below buttons
     
     setTempo(initialTempo); 
 }
@@ -90,6 +92,14 @@ void Sequencer::resetPlaybackPosition() {
 
 bool Sequencer::isPlaying() const {
     return is_playing;
+}
+
+void Sequencer::toggleTieEntryMode() {
+    current_entry_mode_is_tie = !current_entry_mode_is_tie;
+}
+
+bool Sequencer::isTieEntryModeActive() const {
+    return current_entry_mode_is_tie;
 }
 
 void Sequencer::setTotalSteps(int totalSteps) {
@@ -191,12 +201,24 @@ void Sequencer::update(bool guiIsActive) {
 
 void Sequencer::triggerNotesForStep(int actual_data_step) { 
     if (!currentVoices || actual_data_step < 0 || actual_data_step >= current_sequence_total_steps) return;
+
+    int previous_actual_data_step = (actual_data_step == 0) ? (current_sequence_total_steps - 1) : (actual_data_step - 1);
+
     for (int n = 0; n < NUM_NOTES; ++n) { 
-        if (note_active[actual_data_step][n]) { // Access using actual_data_step
+        if (note_active[actual_data_step][n]) { // If note is active in current step
             if (currentVoices[n].waveform && currentVoices[n].envelope) {
-                float amp = note_velocity[actual_data_step] / 127.0f; // Use actual_data_step
+                float amp = note_velocity[actual_data_step] / 127.0f; 
                 currentVoices[n].waveform->amplitude(amp); 
-                currentVoices[n].envelope->noteOn();
+
+                bool retrigger_envelope = true;
+                // If the note in the PREVIOUS step was active AND tied, don't retrigger
+                if (note_active[previous_actual_data_step][n] && note_is_tied[previous_actual_data_step][n]) {
+                    retrigger_envelope = false;
+                }
+
+                if (retrigger_envelope) {
+                    currentVoices[n].envelope->noteOn();
+                }
             }
         }
     }
@@ -204,10 +226,21 @@ void Sequencer::triggerNotesForStep(int actual_data_step) {
 
 void Sequencer::turnOffNotesForStep(int actual_data_step) { 
     if (!currentVoices || actual_data_step < 0 || actual_data_step >= current_sequence_total_steps) return;
+
+    int next_actual_data_step = (actual_data_step + 1) % current_sequence_total_steps;
+
     for (int n = 0; n < NUM_NOTES; ++n) { 
-        if (note_active[actual_data_step][n]) { // Access using actual_data_step
+        if (note_active[actual_data_step][n]) { // If note was active in the step that just finished
             if (currentVoices[n].envelope) {
-                currentVoices[n].envelope->noteOff();
+                bool keep_note_sounding = false;
+                // If the current note is TIED AND the same note is active in the NEXT step, keep it sounding
+                if (note_is_tied[actual_data_step][n] && note_active[next_actual_data_step][n]) {
+                    keep_note_sounding = true;
+                }
+
+                if (!keep_note_sounding) { 
+                    currentVoices[n].envelope->noteOff();
+                }
             }
         }
     }
@@ -261,11 +294,28 @@ void Sequencer::drawGrid() {
             int x = gridStartX + s_page * cellWidth; 
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
             
-            uint16_t cellColor = colorCellOff; // Default to off if step is beyond total length
+            uint16_t cellColor = colorCellOff; 
+            int note_rect_width = cellWidth - 1; // Default to full width
+
             if (actual_data_step < current_sequence_total_steps) { 
-                 cellColor = note_active[actual_data_step][n] ? colorCellOn : colorCellOff;
+                 if (note_active[actual_data_step][n]) {
+                     cellColor = colorCellOn;
+                     // If the note is NOT tied (staccato), make it half width
+                     if (!note_is_tied[actual_data_step][n]) { 
+                         note_rect_width = cellWidth / 2; 
+                     }
+                 }
             }
-            tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, cellColor);
+            
+            if(cellColor == colorCellOff) { // If note is off, or beyond sequence length
+                 tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, colorCellOff);
+            } else { // Active note
+                 tft->fillRect(x + 1, y + 1, note_rect_width, cellHeight - 1, cellColor);
+                 // If staccato (not tied) and drawn half-width, fill the other half with background
+                 if (!note_is_tied[actual_data_step][n] && note_rect_width < cellWidth -1) {
+                     tft->fillRect(x + 1 + note_rect_width, y + 1, (cellWidth -1) - note_rect_width, cellHeight -1, colorCellOff);
+                 }
+            }
             tft->drawRect(x, y, cellWidth, cellHeight, colorGridLines);
         }
     }
@@ -291,35 +341,47 @@ void Sequencer::drawVelocities() {
     }
 }
 
+
 void Sequencer::highlightCurrentStep() {
     if (!tft) return;
 
     int start_step_of_page = current_page_index * STEPS_PER_PAGE;
     int end_step_of_page = start_step_of_page + STEPS_PER_PAGE - 1;
 
-    // Clear previous highlight if it was on the current page and is different
-    if (previous_step_drawn != current_step && 
-        previous_step_drawn >= start_step_of_page && 
-        previous_step_drawn <= end_step_of_page &&
-        previous_step_drawn < current_sequence_total_steps) {
-        
-        int visual_prev_step_on_page = previous_step_drawn - start_step_of_page;
+    int visual_previous_step_on_page = -1;
+    if (previous_step_drawn >= start_step_of_page && previous_step_drawn <= end_step_of_page && previous_step_drawn < current_sequence_total_steps) {
+        visual_previous_step_on_page = previous_step_drawn - start_step_of_page;
+    }
+    
+    int visual_current_step_on_page = -1;
+    if (current_step >= start_step_of_page && current_step <= end_step_of_page && current_step < current_sequence_total_steps) {
+        visual_current_step_on_page = current_step - start_step_of_page;
+    }
+
+    if (visual_previous_step_on_page != -1 && (previous_step_drawn != current_step || visual_current_step_on_page == -1) ) {
         for (int n = 0; n < NUM_NOTES; ++n) { 
-            int x = gridStartX + visual_prev_step_on_page * cellWidth;
+            int x = gridStartX + visual_previous_step_on_page * cellWidth;
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
-            uint16_t cellColor = note_active[previous_step_drawn][n] ? colorCellOn : colorCellOff;
-            tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, cellColor); 
+            
+            uint16_t cellColor = colorCellOff;
+            int note_rect_width = cellWidth -1;
+            if(previous_step_drawn < current_sequence_total_steps && note_active[previous_step_drawn][n]) {
+                cellColor = colorCellOn;
+                if(!note_is_tied[previous_step_drawn][n]) note_rect_width = cellWidth / 2; // Check tie state
+            }
+            if(cellColor == colorCellOff) {
+                 tft->fillRect(x + 1, y + 1, cellWidth - 1, cellHeight - 1, colorCellOff);
+            } else {
+                 tft->fillRect(x + 1, y + 1, note_rect_width, cellHeight - 1, cellColor);
+                 if (!note_is_tied[previous_step_drawn][n] && note_rect_width < cellWidth -1) {
+                     tft->fillRect(x + 1 + note_rect_width, y + 1, (cellWidth -1) - note_rect_width, cellHeight -1, colorCellOff);
+                 }
+            }
             tft->drawRect(x, y, cellWidth, cellHeight, colorGridLines); 
         }
     }
     
-    // Draw new highlight if playing and current_step is on the current page
-    if (is_playing && 
-        current_step >= start_step_of_page && 
-        current_step <= end_step_of_page && 
-        current_step < current_sequence_total_steps) {
-        
-        int visual_current_step_on_page = current_step - start_step_of_page;
+    if (is_playing && visual_current_step_on_page != -1) {
         for (int n = 0; n < NUM_NOTES; ++n) { 
             int x = gridStartX + visual_current_step_on_page * cellWidth;
             int y = gridStartY + ((NUM_NOTES - 1) - n) * cellHeight; 
@@ -332,11 +394,20 @@ void Sequencer::highlightCurrentStep() {
 void Sequencer::drawControls() {
     if (!tft) return;
     tft->setFont(LiberationMono_10); 
+    tft->setTextColor(colorText);
     tft->setTextSize(1);
 
-    tft->fillRect(playButtonX, playButtonY, playButtonWidth, playButtonHeight, colorButton);
-    tft->setTextColor(colorText);
-    tft->setCursor(playButtonX + 10, playButtonY + 8);
+    tft->fillRect(0, playButtonY, playButtonWidth, playButtonHeight, colorButton);
+    tft->setCursor(10, playButtonY+8);
+    tft->print("TIED");
+
+    tft->fillRect(playButtonX - playButtonWidth - 35, playButtonY, playButtonWidth, playButtonHeight, colorButton);
+    tft->setCursor(90, playButtonY+8);
+    tft->print("ZERO");
+
+    tft->fillRect(playButtonX-10, playButtonY, playButtonWidth, playButtonHeight, colorButton);
+    
+    tft->setCursor(playButtonX, playButtonY + 8);
     tft->print("PLAY");
 
     tft->fillRect(stopButtonX, stopButtonY, stopButtonWidth, stopButtonHeight, colorButton);
@@ -396,6 +467,13 @@ void Sequencer::handleTouch(int touchX, int touchY, bool isPressed) {
             if (actual_data_step < current_sequence_total_steps) { 
                 if (isPressed && !touch_was_pressed_on_grid[page_step_touched][note_data_index]) {
                     note_active[actual_data_step][note_data_index] = !note_active[actual_data_step][note_data_index];
+                    if (note_active[actual_data_step][note_data_index]) {
+                        // Note just turned ON, set its tie state based on current entry mode
+                        note_is_tied[actual_data_step][note_data_index] = current_entry_mode_is_tie;
+                    } else {
+                        // Note just turned OFF, reset its tie state
+                        note_is_tied[actual_data_step][note_data_index] = false;
+                    }
                     touch_was_pressed_on_grid[page_step_touched][note_data_index] = true;
                     needsRedrawGrid = true; 
                 } else if (!isPressed) {

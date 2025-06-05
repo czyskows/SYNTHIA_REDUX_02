@@ -256,7 +256,7 @@ int screen_points[4][2];
 TS_Point raw_adc_points[4]; // Stores raw ADC readings for calibration targets
 
 const int EEPROM_ADDRESS = 0; // Starting address in EEPROM
-const uint16_t CALIBRATION_MAGIC_NUMBER = 0xCAFF; // Identifies valid calibration data      ////////////////////////////////////MAGIC NUMBER//////////////////////////////////////////
+const uint16_t CALIBRATION_MAGIC_NUMBER = 0xCAFE; // Identifies valid calibration data      ////////////////////////////////////MAGIC NUMBER//////////////////////////////////////////
 
 // EEPROM Configuration for Calibration Data
 struct TouchCalibrationData {
@@ -1738,6 +1738,7 @@ void loop() {
     }
 
     if(buttonState == 8){
+      static uint8_t last_func_for_controls = 0;
       if(sliChange4 == 0){
         tft.fillRect(30, 220, 30, 10, ILI9341_BLACK); 
         sequencer.setTempo(map(sliderVal4, 0, 255, 50, 150));
@@ -1752,6 +1753,7 @@ void loop() {
       sequencer.setPage(new_page_index); // This will only redraw if the page actually changes
       if(status1.keys == 16){sequencer.play();}
       if(status1.keys == 8) {sequencer.stop();}
+      if(func == 64) {sequencer.toggleTieEntryMode();}
       if (!shift) { 
         if (func == 32) {
           sequencer.resetPlaybackPosition();  
@@ -1777,6 +1779,7 @@ void loop() {
             Serial.print("Sequencer total steps set to: "); Serial.println(desired_total_steps);
         }
         previous_sliderVal2_for_length = sliderVal2;
+        last_func_for_controls = func;
       }
     }
 
